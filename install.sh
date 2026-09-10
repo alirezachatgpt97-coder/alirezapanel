@@ -31,6 +31,8 @@ alirezapanel -- vpn-ui + the complete AdGuard Home interface
   sudo bash install.sh --repair     Reinstall integration and pinned binaries;
                                    preserve settings/users and make a backup
   sudo bash install.sh --check      Read-only service and connectivity checks
+  sudo bash install.sh --fix-restart Apply only the restart-page fix to an existing installation
+  sudo bash install.sh --enable-nodes Add/update Nodes without reinstalling VPN or DNS
   bash install.sh --help            Show this help
 
 Optional first-install environment variables:
@@ -61,7 +63,7 @@ HELP
 
 case "$MODE" in
     --help|-h) help; exit 0 ;;
-    install|--repair|--check) ;;
+    install|--repair|--check|--fix-restart|--enable-nodes) ;;
     *) help; exit 2 ;;
 esac
 [[ $# -le 1 ]] || die 'Only one operation may be specified.'
@@ -71,6 +73,77 @@ if [[ "$MODE" == --check ]]; then
     exec python3 "$ROOT/gateway/manage.py" check
 fi
 command -v systemctl >/dev/null || die 'A Linux server running systemd is required.'
+if [[ "$MODE" == --enable-nodes ]]; then
+    [[ -f "$ROOT/gateway/gateway.py" ]] || die 'Install alirezapanel first.'
+    exec 9>/run/lock/alirezapanel-install.lock
+    flock -n 9 || die 'Another installer is running.'
+    python3 - "$0" "$ROOT" <<'NODES_UPDATE_PY'
+import pathlib, re, sys
+installer=pathlib.Path(sys.argv[1]).read_text()
+pattern=r"cat > \"\$STAGE/([^\"\n]+)\" <<'NODE_EMBEDDED_([A-Z_]+)_EOF'\n(.*?)\nNODE_EMBEDDED_\2_EOF"
+files={name:content for name,tag,content in re.findall(pattern,installer,re.S)}
+namespace={}
+exec(compile(files['nodes_install.py'],'nodes_install.py','exec'),namespace)
+namespace['install'](sys.argv[2],files)
+NODES_UPDATE_PY
+    install -d -o alirezapanel -g alirezapanel -m 700 /var/lib/alirezapanel-nodes
+    install -d -m 755 /etc/systemd/system/alirezapanel.service.d
+    cat > /etc/systemd/system/alirezapanel.service.d/nodes.conf <<'NODE_UNIT'
+[Service]
+StateDirectory=alirezapanel-nodes
+StateDirectoryMode=0700
+ReadWritePaths=/var/lib/alirezapanel-nodes
+NODE_UNIT
+    systemctl daemon-reload
+    systemctl restart alirezapanel.service
+    systemctl is-active --quiet alirezapanel.service || die 'Gateway did not start; inspect its logs.'
+    say 'Nodes enabled. Refresh the panel. Repeat --enable-nodes on each node server.'
+    exit 0
+fi
+if [[ "$MODE" == --fix-restart ]]; then
+    [[ -f "$ROOT/gateway/gateway.py" ]] || die 'alirezapanel is not installed.'
+    exec 9>/run/lock/alirezapanel-install.lock
+    flock -n 9 || die 'Another alirezapanel installer is running.'
+    python3 - "$0" "$ROOT/gateway/gateway.py" <<'RESTART_FIX_PY'
+import os, pathlib, re, shutil, sys, tempfile, time
+installer = pathlib.Path(sys.argv[1]).read_text()
+target = pathlib.Path(sys.argv[2])
+current = target.read_text()
+anchor = '    def brand_html(self, text, base, agh=False):\n'
+if current.count(anchor) != 1:
+    raise SystemExit('Unsupported gateway layout; nothing changed.')
+embedded = installer.split("<<'ALIREZAPANEL_EMBEDDED_0_EOF'\n", 1)[1].split('\nALIREZAPANEL_EMBEDDED_0_EOF', 1)[0]
+start = embedded.index('    def fix_restart_html(self, document):\n')
+method = embedded[start:embedded.index(anchor, start)]
+call = '        if not agh:\n            text = self.fix_restart_html(text)\n'
+if '    def fix_restart_html(self, document):\n' in current:
+    start = current.index('    def fix_restart_html(self, document):\n')
+    current = current[:start] + current[current.index(anchor, start):]
+current = current.replace(anchor + call, anchor, 1)
+updated = current.replace(anchor, method + anchor + call, 1)
+compile(updated, str(target), 'exec')
+backup = target.with_name('gateway.py.before-restart-fix-' + str(time.time_ns()))
+shutil.copy2(target, backup)
+metadata = target.stat()
+fd, temporary = tempfile.mkstemp(prefix='.restart-fix-', dir=target.parent)
+try:
+    with os.fdopen(fd, 'w') as stream:
+        stream.write(updated)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.chown(temporary, metadata.st_uid, metadata.st_gid)
+    os.chmod(temporary, metadata.st_mode & 0o7777)
+    os.replace(temporary, target)
+finally:
+    if os.path.exists(temporary):
+        os.unlink(temporary)
+print('Gateway backup:', backup)
+RESTART_FIX_PY
+    systemctl restart alirezapanel.service
+    systemctl is-active --quiet alirezapanel.service || die 'Gateway did not start; inspect journalctl -u alirezapanel.'
+    say 'Restart-page fix installed. Refresh the settings page before pressing Restart.'
+    exit 0
+fi
 [[ -d /run/systemd/system ]] || die 'systemd must be running; ordinary Docker containers are not supported.'
 [[ $(uname -m) == x86_64 ]] || die 'vpn-ui v1.9.4 provides only an x86_64/amd64 binary. ARM is not supported by this installer.'
 [[ -f /etc/os-release ]] || die 'Cannot identify operating system.'
@@ -248,6 +321,7 @@ from urllib.parse import urlsplit
 
 import aiohttp
 from aiohttp import web
+from nodes import Nodes
 from multidict import CIMultiDict
 from yarl import URL
 
@@ -269,6 +343,7 @@ class Gateway:
         self._settings = None
         self._settings_at = 0
         self.agh_lock = asyncio.Lock()
+        self.nodes = Nodes(self)
         self.agh_logged_in = False
 
     def vpn_settings(self):
@@ -299,6 +374,7 @@ class Gateway:
         return self._settings
 
     async def start(self, app):
+        await self.nodes.start()
         timeout = aiohttp.ClientTimeout(total=None, connect=15, sock_read=300)
         self.vpn = aiohttp.ClientSession(timeout=timeout, cookie_jar=aiohttp.DummyCookieJar(),
                                         auto_decompress=False, connector=aiohttp.TCPConnector(limit=64))
@@ -306,6 +382,7 @@ class Gateway:
                                         auto_decompress=False, connector=aiohttp.TCPConnector(limit=32))
 
     async def stop(self, app):
+        await self.nodes.stop()
         await self.vpn.close()
         await self.agh.close()
 
@@ -338,7 +415,57 @@ class Gateway:
                     raise web.HTTPBadGateway(text="DNS service authentication failed. Run alirezapanel check.")
             self.agh_logged_in = True
 
+    def fix_restart_html(self, document):
+        pattern = re.compile(r"(async restartPanel\(\)\s*\{.*?)(        this\.loading\(true\);.*?)(\n      \},)", re.S)
+        def patch(match):
+            if 'HttpUtil.post("/panel/setting/restartPanel")' not in match[2] or 'window.location.replace' not in match[2]:
+                return match[0]
+            return match[1] + r'''        this.loading(true);
+        try {
+          const msg = await HttpUtil.post("/panel/setting/restartPanel");
+          if (!msg || !msg.success) return;
+
+          // The browser must stay on the public gateway's scheme, host and port.
+          // webPort and webCertFile describe the private VPN listener only.
+          const target = new URL(window.location.href);
+          const base = String(this.allSetting.webBasePath || "/").replace(/^\/+|\/+$/g, "");
+          target.pathname = "/" + (base ? base + "/" : "") + "panel/settings";
+          target.search = "";
+          target.hash = "";
+          // Upstream schedules SIGHUP after three seconds. Do not mistake the
+          // still-running old listener for completion of the restart.
+          await PromiseUtil.sleep(5000);
+          const deadline = Date.now() + 90000;
+          while (Date.now() < deadline) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 3000);
+            try {
+              const response = await fetch(target.href, {
+                credentials: "same-origin", cache: "no-store",
+                signal: controller.signal, redirect: "follow",
+              });
+              const page = await response.text();
+              if (response.ok && new URL(response.url).origin === target.origin &&
+                  (response.headers.get("Content-Type") || "").includes("text/html") &&
+                  page.includes('data-alireza-theme')) {
+                window.location.replace(target.href);
+                return;
+              }
+            } catch (_) { /* Brief connection failures are expected on restart. */ }
+            finally { clearTimeout(timer); }
+            await PromiseUtil.sleep(1500);
+          }
+          throw new Error("Panel did not become ready within 90 seconds. Run alirezapanel check on the server.");
+        } catch (error) {
+          window.alert(error.message || "Panel restart failed. Please try again.");
+        } finally {
+          this.loading(false);
+        }''' + match[3]
+        return pattern.sub(patch, document, count=1)
+
     def brand_html(self, text, base, agh=False):
+        if not agh:
+            text = self.fix_restart_html(text)
         # Don't replace arbitrary JavaScript/JSON identifiers, protocol names,
         # URLs, user configuration or legal attribution. Branding is DOM-only.
         text = re.sub(r"<title>.*?</title>", "<title>alirezapanel" + (" · DNS" if agh else "") + "</title>",
@@ -350,6 +477,8 @@ class Gateway:
                '_alireza/theme.css?v=1.1.0"><script>document.documentElement.setAttribute("data-alireza-theme","ember");'
                'window.ALIREZA=' + opts + ';</script><script defer src="' +
                html.escape(base, quote=True) + '_alireza/brand.js?v=1.1.0"></script>')
+        if not agh:
+            tag += '<script defer src="' + html.escape(base, quote=True) + '_alireza/nodes.js?v=1.0.0"></script>'
         return re.sub(r"</head\s*>", tag + "</head>", text, count=1, flags=re.I)
 
     def dns_shell(self, upstream_html, base):
@@ -399,6 +528,9 @@ class Gateway:
             raise web.HTTPBadGateway(text="alirezapanel: service temporarily unavailable. Run alirezapanel check.")
 
     async def dispatch(self, request):
+        node_response = await self.nodes.route(request)
+        if node_response is not None:
+            return node_response
         self.validate_origin(request)
         base, vpn_origin, tls = self.vpn_settings()
         if request.path == "/" and base != "/":
@@ -1967,8 +2099,736 @@ Public License instead of this License.  But first, please read
 <https://www.gnu.org/licenses/why-not-lgpl.html>.
 ALIREZAPANEL_EMBEDDED_6_EOF
 
+
+cat > "$STAGE/nodes.py" <<'NODE_EMBEDDED_PY_EOF'
+"""Optional node control plane. No VPN database writes or protocol generation.
+
+All inbound operations use the node's unmodified native controller. Node tokens
+are only accepted by an explicit route allowlist, never as a panel login.
+"""
+import asyncio
+import base64
+import contextlib
+import hashlib
+import hmac
+import html
+import json
+import os
+from pathlib import Path
+import re
+import secrets
+import sqlite3
+import ssl
+import tempfile
+import time
+from urllib.parse import quote, urlsplit
+import uuid
+
+import aiohttp
+from aiohttp import web
+from multidict import CIMultiDict
+from yarl import URL
+import yaml
+
+AGENT = '/_alireza/node-agent/v1/'
+PUBLIC = '/_alireza/subscriptions/'
+LIMIT = 8 * 1024 * 1024
+HOP = {'connection','keep-alive','proxy-authenticate','proxy-authorization','te',
+       'trailer','transfer-encoding','upgrade','content-length'}
+
+def headers_clean(headers):
+    excluded = HOP | {s.strip().lower() for s in headers.get('Connection','').split(',')}
+    return CIMultiDict((k,v) for k,v in headers.items() if k.lower() not in excluded)
+
+def no_store(data, status=200):
+    return web.json_response(data, status=status, headers={'Cache-Control':'no-store','Referrer-Policy':'no-referrer'})
+
+async def bounded(response, limit=LIMIT):
+    chunks, size = [], 0
+    async for chunk in response.content.iter_chunked(65536):
+        size += len(chunk)
+        if size > limit:
+            raise web.HTTPBadGateway(text='Node response exceeds its size limit.')
+        chunks.append(chunk)
+    return b''.join(chunks)
+
+def descriptor(text):
+    if not isinstance(text,str) or len(text)>24000:
+        raise ValueError('Invalid node certificate package.')
+    data = json.loads(text)
+    endpoint = str(data['endpoint']).rstrip('/')
+    url = URL(endpoint)
+    if data.get('version') != 1 or url.scheme != 'https' or not url.host or url.user or url.password or url.path not in ('','/') or url.query_string or url.fragment:
+        raise ValueError('Node endpoint must be an HTTPS origin without credentials or a path.')
+    pem = data['certificate']
+    der = ssl.PEM_cert_to_DER_cert(pem)
+    return {'endpoint':endpoint,'certificate':pem,'fingerprint':hashlib.sha256(der).hexdigest()}
+
+def permitted(method, tail):
+    # URL decoding has already happened in aiohttp. Reject traversal/ambiguous
+    # path separators before matching, rather than trying to normalize them.
+    path = tail.split('?',1)[0]
+    if '\\' in path or any(p in ('.','..') for p in path.split('/')) or path.startswith('/'):
+        return False
+    if method in ('GET','HEAD') and (path.startswith('assets/') or path in ('panel/inbounds','panel/inbounds/','ws','panel/core','panel/core/')):
+        return True
+    if method in ('GET','POST') and path.startswith('panel/api/inbounds/'):
+        return True
+    if method == 'GET' and path in ('panel/core/status','panel/core/catalog','panel/core/provision-status'):
+        return True
+    if method == 'POST' and path == 'panel/core/provision':
+        return True
+    if method == 'POST' and path in ('panel/setting/defaultSettings','panel/setting/inboundForm'):
+        return True
+    if method == 'GET' and path in tuple('panel/api/server/'+p for p in ('status','serverName','panelLocation','getNewUUID','getNewX25519Cert','getNewmldsa65','getNewmlkem768','getNewVlessEnc','getXrayVersion')):
+        return True
+    if method == 'POST' and path=='panel/api/server/getNewEchCert':
+        return True
+    return False
+
+class Nodes:
+    def __init__(self, gateway):
+        self.g = gateway
+        self.folder = Path(gateway.config.get('nodes_state','/var/lib/alirezapanel-nodes'))
+        self.file = self.folder/'state.json'
+        self.lock = asyncio.Lock()
+        self.login_lock = asyncio.Lock()
+        self.cookie = ''
+        self.cookie_at = 0
+        self.pool = asyncio.Semaphore(8)
+        self.subscription_pool = asyncio.Semaphore(2)
+        self.channels = {}
+        self.state = None
+
+    async def start(self):
+        self.folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+        self.state = json.loads(self.file.read_text(encoding='utf-8')) if self.file.exists() else {
+            'version':1,'id':str(uuid.uuid4()),'token':None,'service':None,'nodes':{},'profiles':{}}
+        self.remote = aiohttp.ClientSession(cookie_jar=aiohttp.DummyCookieJar(),
+            timeout=aiohttp.ClientTimeout(total=None,connect=8,sock_read=90),
+            connector=aiohttp.TCPConnector(limit=32),auto_decompress=False)
+
+    async def stop(self):
+        for tasks in self.channels.values():
+            for task in tuple(tasks): task.cancel()
+        await self.remote.close()
+
+    async def channel(self, key, operation):
+        task=asyncio.current_task()
+        tasks=self.channels.setdefault(key,set()); tasks.add(task)
+        try:
+            return await operation
+        finally:
+            tasks.discard(task)
+
+    def disconnect(self, key):
+        for task in tuple(self.channels.get(key,())):
+            task.cancel()
+
+    def save(self):
+        fd, name = tempfile.mkstemp(prefix='.state-',dir=self.folder)
+        try:
+            with os.fdopen(fd,'w',encoding='utf-8') as f:
+                json.dump(self.state,f,ensure_ascii=True)
+                f.flush(); os.fsync(f.fileno())
+            os.chmod(name,0o600)
+            os.replace(name,self.file)
+        finally:
+            if os.path.exists(name): os.unlink(name)
+
+    async def admin(self, request):
+        self.g.validate_origin(request)
+        if not await self.g.is_admin(request):
+            raise web.HTTPForbidden(text='Super-admin access required.')
+
+    async def body(self, request):
+        raw = bytearray()
+        async for chunk in request.content.iter_chunked(16384):
+            raw.extend(chunk)
+            if len(raw)>65536: break
+        if len(raw)>65536: raise web.HTTPRequestEntityTooLarge(max_size=65536,actual_size=len(raw))
+        data = json.loads(raw)
+        if not isinstance(data,dict): raise ValueError('Expected an object.')
+        return data
+
+    async def provision(self, request):
+        # Explicit native admin API, never SQL insertion or changes to accounts,
+        # clients, settings or protocol tables. Credentials stay on this server.
+        if self.state['service']: return
+        async with self.lock:
+            if self.state['service']: return
+            credentials = {'username':'alireza-node-'+secrets.token_hex(6),'password':secrets.token_urlsafe(40)}
+            base,origin,tls = self.g.vpn_settings()
+            data = dict(credentials,nickname='alirezapanel node connector',enable='true',isSuperAdmin='true')
+            async with self.g.vpn.post(origin+base+'panel/admins/add',data=data,ssl=tls,
+                headers={'Cookie':request.headers.get('Cookie',''),'Host':request.host},allow_redirects=False) as response:
+                result = json.loads(await bounded(response))
+                if response.status!=200 or result.get('success') is not True:
+                    raise web.HTTPBadGateway(text='Unable to create the node connector account.')
+            self.state['service']=credentials
+            self.state['token']=secrets.token_urlsafe(48)
+            self.save()
+
+    async def session(self, host):
+        async with self.login_lock:
+            if self.cookie and time.monotonic()-self.cookie_at<60:
+                return self.cookie
+            if not self.state['service']:
+                raise web.HTTPServiceUnavailable(text='Open Nodes and enable this node first.')
+            base,origin,tls = self.g.vpn_settings()
+            async with self.g.vpn.post(origin+base+'login',data=self.state['service'],ssl=tls,
+                headers={'Host':host},allow_redirects=False) as response:
+                data = json.loads(await bounded(response))
+                cookie = response.cookies.get('vpn-ui')
+                if response.status!=200 or data.get('success') is not True or not cookie:
+                    self.cookie=''
+                    raise web.HTTPServiceUnavailable(text='Node connector account is unavailable; check Admins on this node.')
+                self.cookie='vpn-ui='+cookie.coded_value
+                self.cookie_at=time.monotonic()
+                return self.cookie
+
+    def auth(self, request):
+        token = self.state.get('token') or ''
+        supplied = request.headers.get('Authorization','')
+        if request.scheme!='https' or not token or not hmac.compare_digest(supplied,'Bearer '+token):
+            raise web.HTTPUnauthorized(text='Node authentication failed.')
+
+    async def local_data(self, host):
+        base,origin,tls=self.g.vpn_settings()
+        async with self.g.vpn.get(origin+base+'panel/api/inbounds/list',ssl=tls,
+            headers={'Cookie':await self.session(host),'Host':host},allow_redirects=False) as response:
+            data=json.loads(await bounded(response))
+            if response.status!=200 or data.get('success') is not True:
+                raise web.HTTPBadGateway(text='Unable to list node inbounds.')
+        clients={}
+        for inbound in data.get('obj') or []:
+            settings=inbound.get('settings') or '{}'
+            settings=json.loads(settings) if isinstance(settings,str) else settings
+            for client in settings.get('clients') or []:
+                sid=client.get('subId') or client.get('subID')
+                if sid and re.fullmatch(r'[A-Za-z0-9_-]{1,200}',sid):
+                    clients[sid]={'id':sid,'name':client.get('email') or sid}
+        return {'clients':list(clients.values()),'inbounds':len(data.get('obj') or [])}
+
+    async def info(self, host):
+        base,_,_=self.g.vpn_settings()
+        return {'version':1,'id':self.state['id'],'base':base,'name':host}
+
+    async def remote_data(self, node, path):
+        async with self.pool:
+            async with self.remote.get(node['endpoint']+AGENT+path,
+                ssl=aiohttp.Fingerprint(bytes.fromhex(node['fingerprint'])),
+                headers={'Authorization':'Bearer '+node['token'],'X-Alirezapanel-Request':'1'},
+                allow_redirects=False,timeout=aiohttp.ClientTimeout(total=15)) as response:
+                raw=await bounded(response)
+                if response.status!=200: raise web.HTTPBadGateway(text='Node unavailable or token revoked.')
+                return json.loads(raw)
+
+    async def route(self, request):
+        if request.path.startswith(AGENT):
+            self.auth(request)
+            tail=request.path[len(AGENT):]
+            if request.method=='GET' and tail=='info': return no_store(await self.info(request.host))
+            if request.method=='GET' and tail=='catalog': return no_store(await self.local_data(request.host))
+            if request.method=='GET' and tail.startswith('sub/'):
+                return await self.local_sub_response(request,tail[4:])
+            if tail.startswith('relay/'):
+                tail=tail[6:]
+                if not permitted(request.method,tail): raise web.HTTPForbidden(text='This operation is outside node inbound access.')
+                base,_,_=self.g.vpn_settings()
+                headers=CIMultiDict(request.headers)
+                for key in ('Authorization','Cookie','Origin','Referer','Sec-Fetch-Site'):
+                    headers.popall(key,None)
+                headers['Cookie']=await self.session(request.host)
+                headers['X-Alirezapanel-Request']='1'
+                clone=request.clone(rel_url=URL(base+quote(tail,safe='/@:-._~')+('?' + request.query_string if request.query_string else ''),encoded=True),headers=headers)
+                if tail=='ws':
+                    return await self.channel('agent',self.g.dispatch(clone))
+                return await self.g.dispatch(clone)
+            raise web.HTTPNotFound()
+        if request.path.startswith(PUBLIC):
+            try:
+                await asyncio.wait_for(self.subscription_pool.acquire(),timeout=1)
+            except asyncio.TimeoutError:
+                raise web.HTTPTooManyRequests(headers={'Retry-After':'5'})
+            try:
+                return await self.public_sub(request)
+            finally:
+                self.subscription_pool.release()
+        base,_,_=self.g.vpn_settings()
+        if not request.path.startswith(base): return None
+        tail=request.path[len(base):]
+        if tail=='_alireza/nodes.js':
+            return web.FileResponse(self.g.root/'nodes.js',headers={'Cache-Control':'no-cache'})
+        if tail.startswith('_alireza/remote/'):
+            await self.admin(request)
+            parts=tail[len('_alireza/remote/'):].split('/',1)
+            if len(parts)!=2 or parts[0] not in self.state['nodes']: raise web.HTTPNotFound()
+            return await self.proxy(request,parts[0],parts[1],base)
+        if tail in ('panel/nodes','panel/nodes/'):
+            await self.admin(request)
+            base,origin,tls=self.g.vpn_settings()
+            async with self.g.vpn.get(origin+base+'panel/admins',ssl=tls,headers={
+                'Cookie':request.headers.get('Cookie',''),'Host':request.host,'Accept-Encoding':'identity'},allow_redirects=False) as response:
+                if response.status!=200: raise web.HTTPBadGateway()
+                page=self.g.dns_shell((await bounded(response)).decode(),base)
+            page=page.replace('alirezapanel · DNS','alirezapanel · Nodes').replace('id="alireza-dns"','id="alireza-nodes"')
+            page=page.replace('src="'+html.escape(base+'dns/',quote=True)+'"','src="'+html.escape(base+'_alireza/nodes-ui',quote=True)+'"')
+            return web.Response(text=page,content_type='text/html',headers={'Cache-Control':'no-store'})
+        if tail=='_alireza/nodes-ui':
+            await self.admin(request)
+            page=(self.g.root/'nodes.html').read_text(encoding='utf-8')
+            page=page.replace('__BASE_JSON__',json.dumps(base)).replace('__BASE_ATTR__',html.escape(base,quote=True))
+            return web.Response(text=page,content_type='text/html',headers={'Cache-Control':'no-store'})
+        if tail.startswith('_alireza/nodes/'):
+            await self.admin(request)
+            try:
+                return await self.manage(request,tail[len('_alireza/nodes/'):],base)
+            except (ValueError,KeyError,TypeError) as error:
+                raise web.HTTPBadRequest(text=str(error))
+            except aiohttp.ServerFingerprintMismatch:
+                raise web.HTTPBadGateway(text='Node certificate changed or does not match. Copy its current connection certificate again.')
+        return None
+
+    async def manage(self, request, operation, base):
+        if request.method=='GET' and operation=='list':
+            return no_store({'nodes':[{'id':k,'name':v['name'],'endpoint':v['endpoint']} for k,v in self.state['nodes'].items()],
+                'profiles':[dict(v,id=k,url=request.scheme+'://'+request.host+PUBLIC+k) for k,v in self.state['profiles'].items()]})
+        if request.method!='POST': raise web.HTTPMethodNotAllowed(request.method,['POST'])
+        data=await self.body(request)
+        if operation=='identity':
+            if request.scheme!='https' or not self.g.config.get('tls_enabled',True):
+                raise ValueError('Enable HTTPS on this panel before connecting nodes.')
+            await self.provision(request)
+            pem=Path(self.g.config['tls_cert']).read_text(encoding='utf-8')
+            pem=re.search(r'-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----',pem,re.S).group(0)
+            package=json.dumps({'version':1,'endpoint':request.scheme+'://'+request.host,'certificate':pem},indent=2)
+            return no_store({'certificate':package,'token':self.state['token']})
+        if operation=='rotate':
+            async with self.lock:
+                self.state['token']=secrets.token_urlsafe(48); self.save()
+                self.disconnect('agent')
+            return no_store({'success':True})
+        if operation=='disable':
+            async with self.lock:
+                self.state['token']=None; self.save()
+                self.disconnect('agent')
+            return no_store({'success':True})
+        if operation=='add':
+            node=descriptor(data.get('certificate'))
+            token=data.get('token','').strip()
+            if not re.fullmatch(r'[A-Za-z0-9_-]{40,128}',token): raise ValueError('Invalid API token.')
+            node['token']=token
+            info=await self.remote_data(node,'info')
+            if info.get('version')!=1 or str(uuid.UUID(info['id']))!=info['id']: raise ValueError('Unsupported node.')
+            if info['id']==self.state['id']: raise ValueError('This is the local server; choose Local in Inbounds.')
+            node.update(name=str(info.get('name') or URL(node['endpoint']).host)[:120],base=info['base'])
+            async with self.lock:
+                if len(self.state['nodes'])>=64 and info['id'] not in self.state['nodes']: raise ValueError('Maximum 64 nodes.')
+                self.state['nodes'][info['id']]=node; self.save()
+                self.disconnect(info['id'])
+            return no_store({'success':True,'id':info['id']})
+        if operation in ('delete','rename','check','catalog'):
+            ident=data.get('id')
+            if operation=='catalog' and ident=='local':
+                await self.provision(request)
+                return no_store(await self.local_data(request.host))
+            node=self.state['nodes'].get(ident)
+            if not node: raise web.HTTPNotFound()
+            if operation=='catalog': return no_store(await self.remote_data(node,'catalog'))
+            if operation=='check':
+                info=await self.remote_data(node,'info')
+                if info.get('id')!=ident: raise ValueError('Node identity changed; reconnect it.')
+                return no_store({'success':True})
+            async with self.lock:
+                if operation=='delete':
+                    if any(any(s['node']==ident for s in p['sources']) for p in self.state['profiles'].values()):
+                        raise ValueError('Remove this node from combined subscriptions before deleting it.')
+                    del self.state['nodes'][ident]
+                    self.disconnect(ident)
+                else:
+                    name=str(data.get('name','')).strip()
+                    if not name or len(name)>120: raise ValueError('Name must be 1–120 characters.')
+                    node['name']=name
+                self.save()
+            return no_store({'success':True})
+        if operation=='profile':
+            sources=data.get('sources')
+            if not isinstance(sources,list) or not 1<=len(sources)<=32: raise ValueError('Choose 1–32 subscriptions.')
+            checked=[]
+            for entry in sources:
+                n=entry.get('node'); sid=entry.get('sub')
+                if n!='local' and n not in self.state['nodes']: raise ValueError('Unknown node.')
+                if not isinstance(sid,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,200}',sid): raise ValueError('Invalid subscription.')
+                row={'node':n,'sub':sid}
+                if row not in checked: checked.append(row)
+            name=str(data.get('name') or 'alirezapanel')[:120]
+            # Validate each selected subscription before publishing a bearer URL.
+            await asyncio.gather(*(self.source_bytes(s,'links',request.host) for s in checked))
+            async with self.lock:
+                if len(self.state['profiles'])>=1000: raise ValueError('Maximum 1000 combined subscriptions.')
+                ident=secrets.token_urlsafe(32)
+                self.state['profiles'][ident]={'name':name,'sources':checked}; self.save()
+            return no_store({'url':request.scheme+'://'+request.host+PUBLIC+ident})
+        if operation=='delete-profile':
+            async with self.lock:
+                self.state['profiles'].pop(data.get('id'),None); self.save()
+            return no_store({'success':True})
+        raise web.HTTPNotFound()
+
+    async def proxy(self, request, ident, tail, base):
+        if not permitted(request.method,tail): raise web.HTTPForbidden(text='Use the node panel directly for settings outside inbounds.')
+        node=self.state['nodes'][ident]
+        path=quote(tail,safe='/@:-._~')+('?' + request.query_string if request.query_string else '')
+        target=URL(node['endpoint']+AGENT+'relay/'+path,encoded=True)
+        headers=headers_clean(request.headers)
+        for name in ('Host','Cookie','Origin','Referer','Authorization','X-Forwarded-For','X-Real-IP','Forwarded'):
+            headers.popall(name,None)
+        headers['Authorization']='Bearer '+node['token']
+        headers['X-Alirezapanel-Request']='1'
+        headers['Accept-Encoding']='identity'
+        tls=aiohttp.Fingerprint(bytes.fromhex(node['fingerprint']))
+        if request.headers.get('Upgrade','').lower()=='websocket':
+            return await self.channel(ident,self.g.websocket(request,target,headers,self.remote,tls))
+        async with self.remote.request(request.method,target,headers=headers,ssl=tls,
+            data=request.content if request.can_read_body else None,allow_redirects=False) as response:
+            out=headers_clean(response.headers)
+            for key in ('Set-Cookie','WWW-Authenticate','Content-Security-Policy','ETag','Last-Modified'):
+                out.popall(key,None)
+            out['Cache-Control']='no-store'
+            out['Referrer-Policy']='no-referrer'
+            if 300<=response.status<400:
+                raise web.HTTPBadGateway(text='Node session or path changed. Recheck the node connection.')
+            typ=response.headers.get('Content-Type','').lower()
+            mount=base+'_alireza/remote/'+ident+'/'
+            if response.status==200 and request.method!='HEAD' and ('text/html' in typ or tail.split('?',1)[0] in (
+                'assets/js/model/inbound.js','assets/js/model/dbinbound.js','assets/js/util/index.js','assets/js/util/export.js')):
+                body=(await bounded(response)).decode()
+                if 'text/html' in typ:
+                    body=self.mount_html(body,node,mount,base,ident)
+                else:
+                    # Display addresses must refer to the selected node. Only
+                    # hostname reads in link/export UI are adapted, never JSON,
+                    # protocol identifiers, configuration or native executables.
+                    body=re.sub(r'(?<![\w.])(?:window\.)?location\.hostname',json.dumps(URL(node['endpoint']).host),body)
+                return web.Response(body=body.encode(),status=response.status,headers=out)
+            result=web.StreamResponse(status=response.status,headers=out)
+            await result.prepare(request)
+            async for chunk in response.content.iter_chunked(65536): await result.write(chunk)
+            await result.write_eof()
+            return result
+
+    def mount_html(self, body, node, mount, master, ident):
+        match=re.search(r"const basePath = (['\"])(.*?)\1;",body)
+        if not match: raise web.HTTPBadGateway(text='Unsupported node interface layout.')
+        old=match[2]
+        # Rewrite only UI resource and navigation paths. Embedded configuration
+        # values, share links, host addresses and API JSON remain unchanged.
+        body=re.sub(r"(['\"])"+re.escape(old)+r"(?=(?:assets/|panel/|logout/|_alireza/))",lambda m:m[1]+mount,body)
+        body=body.replace(match[0],'const basePath = '+json.dumps(mount)+';',1)
+        body=re.sub(r'window\.ALIREZA=\{.*?\};',lambda m:'window.ALIREZA='+json.dumps({'base':master,'dns':False,'node':ident,'mount':mount})+';',body,count=1)
+        # Brand/theme are provided by the main panel and are not agent API routes.
+        body=body.replace(mount+'_alireza/',master+'_alireza/')
+        body=body.replace('window.location.hostname',json.dumps(URL(node['endpoint']).host))
+        body=re.sub(r'(?<![\w.])location\.hostname',json.dumps(URL(node['endpoint']).host),body)
+        return body
+
+    def sub_target(self, kind, sid, host, suffix=''):
+        if kind not in ('links','json','clash','page') or not re.fullmatch(r'[A-Za-z0-9_-]{1,200}',sid): raise web.HTTPNotFound()
+        if suffix and not re.fullmatch(r'configs/[A-Za-z0-9_.-]+',suffix): raise web.HTTPNotFound()
+        uri=Path(self.g.config['vpn_db']).resolve().as_uri()+'?mode=ro'
+        with contextlib.closing(sqlite3.connect(uri,uri=True,timeout=2)) as db:
+            s=dict(db.execute('SELECT key,value FROM settings'))
+        if s.get('subEnable','false')!='true': raise web.HTTPServiceUnavailable(text='Enable subscription on the selected node first.')
+        listen=s.get('subListen') or '127.0.0.1'
+        if listen in ('0.0.0.0','::'): listen='127.0.0.1'
+        if ':' in listen and not listen.startswith('['): listen='['+listen+']'
+        path=s.get({'links':'subPath','page':'subPath','json':'subJsonPath','clash':'subClashPath'}[kind],
+                   {'links':'/sub/','page':'/sub/','json':'/json/','clash':'/clash/'}[kind])
+        path='/'+path.strip('/')+'/'
+        cert=s.get('subCertFile','')
+        tls=True
+        if cert:
+            tls=ssl.create_default_context(cafile=cert); tls.check_hostname=False
+            tls.verify_flags |= ssl.VERIFY_X509_PARTIAL_CHAIN
+        url=('https' if cert else 'http')+'://'+listen+':'+str(int(s.get('subPort','2097')))+path+sid
+        if suffix: url+='/'+suffix
+        return url,tls,path
+
+    async def sub_bytes(self, kind, sid, host, suffix=''):
+        target,tls,path=self.sub_target(kind,sid,host,suffix)
+        async with self.g.vpn.get(target,ssl=tls,headers={'Host':host,'Accept':'text/html' if kind=='page' else '*/*',
+            'User-Agent':'alirezapanel-nodes/1','Accept-Encoding':'identity'},allow_redirects=False,
+            timeout=aiohttp.ClientTimeout(total=20)) as response:
+            raw=await bounded(response,1024*1024)
+            if response.status!=200: raise web.HTTPBadGateway(text='Subscription is unavailable on a selected node.')
+            return raw,headers_clean(response.headers),path
+
+    async def local_sub_response(self, request, tail):
+        parts=tail.split('/',2)
+        if len(parts)<2: raise web.HTTPNotFound()
+        kind,sid=parts[:2]; suffix=parts[2] if len(parts)>2 else ''
+        raw,headers,_=await self.sub_bytes(kind,sid,request.host,suffix)
+        headers.popall('Set-Cookie',None); headers['Cache-Control']='no-store'
+        return web.Response(body=raw,headers=headers)
+
+    async def source_bytes(self, source, kind, host, suffix=''):
+        if source['node']=='local': return await self.sub_bytes(kind,source['sub'],host,suffix)
+        node=self.state['nodes'].get(source['node'])
+        if not node: raise web.HTTPServiceUnavailable(text='Selected node was removed.')
+        target=node['endpoint']+AGENT+'sub/'+kind+'/'+quote(source['sub'],safe='')
+        if suffix: target+='/'+suffix
+        async with self.pool:
+            async with self.remote.get(target,ssl=aiohttp.Fingerprint(bytes.fromhex(node['fingerprint'])),
+                headers={'Authorization':'Bearer '+node['token'],'X-Alirezapanel-Request':'1'},
+                allow_redirects=False,timeout=aiohttp.ClientTimeout(total=25)) as response:
+                raw=await bounded(response,1024*1024)
+                if response.status!=200: raise web.HTTPBadGateway(text='A selected subscription node is unavailable.')
+                return raw,headers_clean(response.headers),''
+
+    async def public_sub(self, request):
+        if request.method!='GET': raise web.HTTPMethodNotAllowed(request.method,['GET'])
+        parts=request.path[len(PUBLIC):].strip('/').split('/')
+        profile=self.state['profiles'].get(parts[0])
+        if not profile: raise web.HTTPNotFound()
+        kind=parts[1] if len(parts)>1 else 'links'
+        if len(parts)==1 and 'text/html' in request.headers.get('Accept',''):
+            root=PUBLIC+parts[0]
+            links=''.join('<li><a href="'+html.escape(root+'/'+k)+'">'+label+'</a></li>' for k,label in (
+                ('links','Base64 / V2Ray'),('json','Xray JSON'),('clash','Clash / Mihomo')))
+            links+=''.join('<li>'+html.escape(self.source_name(s))+' — '+''.join('<a href="'+root+'/source/'+str(i)+'/'+k+'">'+k+'</a> ' for k in ('links','json','clash'))+'</li>' for i,s in enumerate(profile['sources']))
+            return web.Response(text='<!doctype html><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>alirezapanel</title><body style="background:#111;color:#eee;font:18px system-ui;padding:30px"><h1>'+html.escape(profile['name'])+'</h1><ul>'+links+'</ul><p>Native protocol config files remain available from each node’s Inbounds page.</p></body>',content_type='text/html',headers={'Cache-Control':'no-store'})
+        if kind=='source':
+            if len(parts)!=4 or not parts[2].isdigit() or int(parts[2])>=len(profile['sources']) or parts[3] not in ('links','json','clash'): raise web.HTTPNotFound()
+            raw,headers,_=await self.source_bytes(profile['sources'][int(parts[2])],parts[3],request.host)
+            headers.popall('Set-Cookie',None); headers['Cache-Control']='no-store'
+            return web.Response(body=raw,headers=headers)
+        if kind not in ('links','json','clash') or len(parts)>2: raise web.HTTPNotFound()
+        # Fail closed instead of returning a truncated profile that makes clients
+        # silently delete the servers which happen to be offline during refresh.
+        results=await asyncio.gather(*(self.source_bytes(s,kind,request.host) for s in profile['sources']))
+        raw,typ=merge_subscriptions(kind,[r[0] for r in results],[self.source_name(s) for s in profile['sources']])
+        return web.Response(body=raw,content_type=typ,headers={'Cache-Control':'no-store','Referrer-Policy':'no-referrer',
+            'profile-title':'base64:'+base64.b64encode(profile['name'].encode()).decode(),
+            'profile-web-page-url':request.scheme+'://'+request.host+PUBLIC+parts[0]})
+
+    def source_name(self, source):
+        return 'Local' if source['node']=='local' else self.state['nodes'].get(source['node'],{}).get('name','Node')
+
+def merge_subscriptions(kind, bodies, names):
+    if kind=='links':
+        links=[]
+        for raw in bodies:
+            text=raw.decode().strip()
+            if text and '://' not in text:
+                text=base64.b64decode(text,validate=True).decode()
+            lines=[s.strip() for s in text.splitlines() if s.strip()]
+            if any('://' not in s for s in lines): raise ValueError('A source did not return a native URI subscription.')
+            links.extend(lines)
+        return base64.b64encode(('\n'.join(dict.fromkeys(links))+'\n').encode()),'text/plain'
+    if kind=='json':
+        configs=[]
+        for name,raw in zip(names,bodies):
+            if not raw.strip(): continue
+            data=json.loads(raw)
+            # Native VPN-UI returns one object for a single configuration, an
+            # array for several, and an empty body for unsupported protocols.
+            if isinstance(data,dict): data=[data]
+            if not isinstance(data,list): raise ValueError('A node did not return an Xray JSON configuration.')
+            for config in data:
+                if not isinstance(config,dict): raise ValueError('Invalid Xray configuration.')
+                configs.append(config)
+        return json.dumps(configs,ensure_ascii=False).encode(),'application/json'
+    proxies=[]
+    for index,(name,raw) in enumerate(zip(names,bodies)):
+        data=yaml.safe_load(raw)
+        if not isinstance(data,dict) or not isinstance(data.get('proxies'),list): raise ValueError('A node did not return a Clash profile.')
+        mapping={p['name']:str(index+1)+' · '+name+' · '+p['name'] for p in data['proxies']}
+        for p in data['proxies']:
+            p['name']=mapping[p['name']]
+            if 'dialer-proxy' in p:
+                if p['dialer-proxy'] not in mapping: raise ValueError('Source has a dialer-proxy group; use its native Clash link.')
+                p['dialer-proxy']=mapping[p['dialer-proxy']]
+            proxies.append(p)
+    if not proxies: raise ValueError('No Clash-compatible proxies in the selected subscriptions.')
+    result={'mixed-port':7890,'mode':'rule','proxies':proxies,
+        'proxy-groups':[{'name':'alirezapanel','type':'select','proxies':[p['name'] for p in proxies]}],
+        'rules':['MATCH,alirezapanel']}
+    return yaml.safe_dump(result,allow_unicode=True,sort_keys=False).encode(),'text/yaml'
+NODE_EMBEDDED_PY_EOF
+
+cat > "$STAGE/nodes.js" <<'NODE_EMBEDDED_JS_EOF'
+/* Node selector: additive UI only; all native forms and handlers remain intact. */
+(() => {
+  'use strict';
+  const config=window.ALIREZA;
+  if (!config || config.dns || typeof PERMS==='undefined' || !PERMS.superAdmin) return;
+  const base=config.base;
+  const nav=document.querySelector('.bo-rail');
+  const component=nav && nav.__vue__;
+  if (component && Array.isArray(component.tabs)) {
+    if(config.node) {
+      const home=nav.querySelector('.bo-rail-brand a');
+      if(home) home.href=base+'panel/';
+      component.tabs.forEach(t=>{
+        if(t.key.startsWith(config.mount) && !/panel\/(inbounds|core)/.test(t.key))
+          t.key=base+t.key.slice(config.mount.length);
+      });
+    }
+    if(!component.tabs.some(t=>t.key===base+'panel/nodes'))
+      component.tabs.splice(component.tabs.length-1,0,{key:base+'panel/nodes',icon:'cluster',title:'نودها / Nodes'});
+    if(location.pathname.replace(/\/$/,'')===base+'panel/nodes') component.requestUri=base+'panel/nodes';
+  }
+  if(!/\/panel\/(inbounds|core)\/?$/.test(location.pathname)) return;
+  const main=document.querySelector('.bo-content');
+  if(!main || document.getElementById('alireza-node-picker')) return;
+  const bar=document.createElement('div');
+  bar.id='alireza-node-picker';
+  bar.style.cssText='display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 18px;margin-bottom:18px;border:1px solid #493323;background:#211b17;color:#ffe4cf;border-radius:12px';
+  const label=document.createElement('label');label.textContent='سرور / Server';label.htmlFor='alireza-node-select';
+  const select=document.createElement('select');select.id='alireza-node-select';
+  select.style.cssText='background:#18181c;color:#fff;border:1px solid #795036;border-radius:8px;padding:8px;min-width:190px';
+  const link=document.createElement('a');link.href=base+'panel/nodes';link.textContent='مدیریت نودها';link.style.color='#ff963f';
+  const status=document.createElement('span');status.style.fontSize='13px';status.setAttribute('role','status');
+  select.add(new Option('همین سرور / Local','local'));
+  select.disabled=true;
+  bar.append(label,select,link,status);main.prepend(bar);
+  fetch(base+'_alireza/nodes/list',{credentials:'same-origin',cache:'no-store'})
+    .then(async r=>{if(!r.ok) throw Error();return r.json();})
+    .then(data=>{
+      for(const node of data.nodes) select.add(new Option(node.name,node.id));
+      select.value=config.node || 'local';select.disabled=false;
+      status.textContent=config.node?'تغییرات این صفحه فقط روی نود انتخاب‌شده ذخیره می‌شوند.':'تغییرات این صفحه روی همین سرور ذخیره می‌شوند.';
+    }).catch(()=>{status.textContent='فهرست نودها در دسترس نیست؛ مدیریت محلی همچنان فعال است.';});
+  select.addEventListener('change',()=>{
+    if(!window.confirm('با تغییر سرور، تغییرات ذخیره‌نشدهٔ فرم کنار گذاشته می‌شوند. ادامه می‌دهی؟')) {
+      select.value=config.node || 'local';return;
+    }
+    window.location.assign(select.value==='local'?base+'panel/inbounds':base+'_alireza/remote/'+encodeURIComponent(select.value)+'/panel/inbounds');
+  });
+})();
+NODE_EMBEDDED_JS_EOF
+
+cat > "$STAGE/nodes.html" <<'NODE_EMBEDDED_HTML_EOF'
+<!doctype html>
+<html lang="fa" dir="rtl" data-alireza-theme="ember"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>alirezapanel · Nodes</title>
+<link rel="stylesheet" href="__BASE_ATTR___alireza/theme.css"><style>
+*{box-sizing:border-box}body{margin:0;background:#0e0e11;color:#f5f2ef;font:14px system-ui,sans-serif;line-height:1.9;padding:26px}main{max-width:1160px;margin:auto}h1,h2,p{margin-top:0}h1{font-size:27px;margin-bottom:3px}h2{font-size:18px}.muted{color:#b7b2ad}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.card{background:#18181c;border:1px solid #303037;border-radius:16px;padding:22px;margin:18px 0}.card .card{margin:10px 0;padding:15px}button,a.btn{background:#ff963f;color:#211208;border:1px solid #ff963f;border-radius:9px;padding:9px 15px;font:inherit;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block}button.secondary{background:#242126;color:#f5f2ef;border-color:#494049}button.danger{background:#372023;color:#ffb0b0;border-color:#603034}button:disabled{opacity:.5;cursor:wait}input,textarea,select{display:block;width:100%;background:#101013;color:#f5f2ef;border:1px solid #494149;border-radius:9px;padding:11px;font:inherit;margin:6px 0 14px}textarea{min-height:110px;resize:vertical;direction:ltr;font:12px monospace}input.code{direction:ltr;font:13px monospace}label{display:block}.row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.row>*{margin-block:0}#notice{position:sticky;top:0;z-index:2;padding:12px 16px;background:#34271d;border:1px solid #795036;border-radius:9px;white-space:pre-wrap}#notice:empty{display:none}.nodehead{display:flex;justify-content:space-between;gap:12px;align-items:center}.endpoint{direction:ltr;text-align:right;overflow-wrap:anywhere}.source{display:grid;grid-template-columns:1fr 1.5fr auto;gap:10px;align-items:center}.source select{margin:0}.badge{color:#ffb170;font-size:12px}summary{cursor:pointer;color:#ffb170}button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid #ffb170;outline-offset:3px}@media(max-width:700px){body{padding:14px}.grid{grid-template-columns:1fr}.source{grid-template-columns:1fr}.nodehead{align-items:start;flex-direction:column}}
+a.btn{color:#211208!important}a.btn:hover{color:#211208!important;background:#ffb170}
+</style></head><body><main>
+<div id="notice" role="status" aria-live="polite"></div>
+<h1>نودها و لوکیشن‌ها</h1><p class="muted">سرورهایت را از همین پنل مدیریت کن. هر سرور، اینباندها و تنظیمات مستقل خودش را دارد.</p>
+<div class="grid"><section class="card"><h2>افزودن یا اتصال مجدد نود</h2><p class="muted">در پنل سرور مقصد، «مشخصات اتصال این سرور» را باز کن و این دو مقدار را اینجا قرار بده.</p>
+<form id="add-form"><label for="certificate">گواهی اتصال</label><textarea id="certificate" required spellcheck="false" placeholder='{"version":1,"endpoint":"https://…","certificate":"…"}'></textarea><label for="token">API Token</label><input class="code" id="token" type="password" required autocomplete="off"><button type="submit">بررسی و افزودن نود</button></form><p class="muted">گواهی اتصال شامل آدرس و گواهی عمومی سرور است. با تعویض گواهی HTTPS، همین دو مقدار را دوباره وارد کن.</p></section>
+<section class="card"><h2>مشخصات اتصال این سرور</h2><p class="muted">این مشخصات را در پنل اصلی وارد کن تا این سرور به‌عنوان نود اضافه شود. اتصال نود به HTTPS نیاز دارد.</p><button id="identity">نمایش و کپی مشخصات</button>
+<div id="identity-fields" hidden><label for="my-cert">گواهی اتصال این سرور</label><textarea id="my-cert" readonly spellcheck="false"></textarea><button class="secondary" id="copy-cert">کپی گواهی</button><label for="my-token">API Token این سرور</label><input class="code" id="my-token" readonly type="password"><div class="row"><button class="secondary" id="copy-token">کپی توکن</button><button class="secondary" id="show-token">نمایش / پنهان</button></div></div>
+<details style="margin-top:18px"><summary>مدیریت دسترسی این نود</summary><p class="muted">با نمایش مشخصات، یک حساب اتصال اختصاصی در بخش ادمین‌ها ساخته می‌شود. توکن اجازهٔ مدیریت اینباندها را می‌دهد؛ آن را خصوصی نگه دار.</p><div class="row"><button class="secondary" id="rotate">ساخت توکن جدید</button><button class="danger" id="disable">قطع دسترسی نود</button></div></details></section></div>
+<section class="card"><div class="nodehead"><h2>سرورهای متصل</h2><button class="secondary" id="refresh">بازخوانی فهرست</button></div><div id="nodes-list"></div></section>
+<section class="card"><h2>اشتراک چند لوکیشن</h2><p class="muted">اشتراک‌های کاربر را از سرورهای دلخواه انتخاب کن تا یک لینک شامل کانفیگ همهٔ آن‌ها ساخته شود. این کار کاربر جدید نمی‌سازد و سهمیه یا تاریخ انقضای سرورها را تغییر نمی‌دهد.</p>
+<form id="profile-form"><label for="profile-name">نام اشتراک</label><input id="profile-name" placeholder="مثلاً اشتراک چند لوکیشن علی" maxlength="120"><div id="sources"></div><div class="row" style="margin:16px 0"><button type="button" class="secondary" id="add-source">افزودن سرور به اشتراک</button><button type="submit">ساخت لینک ترکیبی</button></div></form>
+<details><summary>فرمت‌ها و رفتار اشتراک</summary><p class="muted">خروجی Base64، آرایهٔ JSON برای Xray و Clash/Mihomo در دسترس است، به شرط پشتیبانی و فعال‌بودن همان فرمت روی سرورهای انتخاب‌شده. خروجی Clash ترکیبی یک گروه انتخاب سرور دارد؛ قوانین سفارشی هر نود در لینک اصلی آن حفظ می‌شود. فایل‌های اختصاصی OpenVPN و WireGuard از صفحهٔ اینباند همان نود قابل دریافت‌اند. اگر یک منبع قطع باشد، لینک ترکیبی خطا می‌دهد تا لیست ناقص جایگزین کانفیگ‌های کاربر نشود.</p></details>
+<div id="profiles-list"></div></section>
+</main><script>
+'use strict';
+const base=__BASE_JSON__;let nodes=[];
+const $=id=>document.getElementById(id);
+function notice(s){$('notice').textContent=s;}
+async function api(op,data){const r=await fetch(base+'_alireza/nodes/'+op,{method:data===undefined?'GET':'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});if(!r.ok)throw Error((await r.text()).slice(0,400));return r.json();}
+async function busy(button,fn){button.disabled=true;try{await fn();}catch(e){notice(e.message||'عملیات انجام نشد.');}finally{button.disabled=false;}}
+async function copy(value){try{await navigator.clipboard.writeText(value);notice('کپی شد.');}catch(_){notice('کپی خودکار در دسترس نیست؛ مقدار را انتخاب و دستی کپی کن.');}}
+function button(label,action,danger=false){const b=document.createElement('button');b.type='button';b.className=danger?'danger':'secondary';b.textContent=label;b.onclick=()=>busy(b,action);return b;}
+function el(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
+async function load(){const data=await api('list');nodes=data.nodes;const list=$('nodes-list');list.replaceChildren();if(!nodes.length)list.append(el('p','هنوز نودی اضافه نشده است.','muted'));for(const n of nodes){const card=el('article',undefined,'card');const head=el('div',undefined,'nodehead');const title=el('div');title.append(el('strong',n.name),el('div',n.endpoint,'endpoint muted'));const actions=el('div',undefined,'row');const link=el('a','اینباندهای این سرور','btn');link.href=base+'_alireza/remote/'+n.id+'/panel/inbounds';link.target='_top';actions.append(link,button('بررسی اتصال',async()=>{await api('check',{id:n.id});notice('اتصال به '+n.name+' برقرار است.');}),button('تغییر نام',async()=>{const name=prompt('نام سرور',n.name);if(name){await api('rename',{id:n.id,name});await load();}}),button('حذف اتصال',async()=>{if(confirm('اتصال '+n.name+' از این پنل حذف شود؟ اینباندهای نود حذف نمی‌شوند.')){await api('delete',{id:n.id});await load();}},true));head.append(title,actions);card.append(head);list.append(card);}const profiles=$('profiles-list');profiles.replaceChildren();for(const p of data.profiles){const card=el('article',undefined,'card');card.append(el('strong',p.name));const input=el('input');input.className='code';input.readOnly=true;input.value=p.url;card.append(input);const row=el('div',undefined,'row');row.append(button('کپی لینک',()=>copy(p.url)),button('کپی JSON',()=>copy(p.url+'/json')),button('کپی Clash',()=>copy(p.url+'/clash')),button('حذف اشتراک ترکیبی',async()=>{if(confirm('این لینک ترکیبی غیرفعال شود؟ اشتراک‌های اصلی حفظ می‌شوند.')){await api('delete-profile',{id:p.id});await load();}},true));card.append(row);profiles.append(card);}}
+$('add-form').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{await api('add',{certificate:$('certificate').value,token:$('token').value});$('token').value='';$('certificate').value='';await load();notice('نود متصل شد. از بخش اینباندها سرور را انتخاب کن.');});};
+$('identity').onclick=()=>busy($('identity'),async()=>{const d=await api('identity',{});$('my-cert').value=d.certificate;$('my-token').value=d.token||'';$('identity-fields').hidden=false;notice(d.token?'مشخصات آمادهٔ کپی است.':'دسترسی نود قطع است؛ برای فعال‌سازی «ساخت توکن جدید» را بزن.');});
+$('copy-cert').onclick=()=>copy($('my-cert').value);$('copy-token').onclick=()=>copy($('my-token').value);
+$('show-token').onclick=()=>{$('my-token').type=$('my-token').type==='password'?'text':'password';};
+$('rotate').onclick=()=>busy($('rotate'),async()=>{if(confirm('توکن قبلی فوراً غیرفعال می‌شود و باید نود را در پنل‌های اصلی دوباره متصل کنی. ادامه؟')){await api('rotate',{});$('identity').click();notice('توکن جدید ساخته شد.');}});
+$('disable').onclick=()=>busy($('disable'),async()=>{if(confirm('دسترسی تمام پنل‌های اصلی به این نود قطع شود؟')){await api('disable',{});$('my-token').value='';notice('دسترسی نود قطع شد؛ اینباندهای محلی همچنان فعال‌اند.');}});
+$('refresh').onclick=()=>busy($('refresh'),load);
+function sourceRow(){const row=el('div',undefined,'source card');const server=el('select');server.setAttribute('aria-label','سرور منبع');server.add(new Option('انتخاب سرور',''));server.add(new Option('همین سرور','local'));for(const n of nodes)server.add(new Option(n.name,n.id));const client=el('select');client.setAttribute('aria-label','اشتراک کاربر');client.add(new Option('ابتدا سرور را انتخاب کن',''));client.disabled=true;row.append(server,client,button('برداشتن',async()=>row.remove()));server.onchange=async()=>{const selected=server.value;client.replaceChildren(new Option('در حال دریافت…',''));client.disabled=true;if(!selected)return;try{const data=await api('catalog',{id:selected});if(server.value!==selected)return;client.replaceChildren(new Option('انتخاب اشتراک کاربر',''));for(const c of data.clients)client.add(new Option(c.name,c.id));client.disabled=false;if(!data.clients.length)notice('این سرور اشتراک کاربری ندارد؛ ابتدا در اینباندهای آن کاربر بساز.');}catch(e){if(server.value===selected)client.replaceChildren(new Option('دریافت ناموفق؛ سرور را دوباره انتخاب کن',''));notice(e.message);}};$('sources').append(row);}
+$('add-source').onclick=sourceRow;
+$('profile-form').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{const sources=Array.from($('sources').children).map(row=>({node:row.children[0].value,sub:row.children[1].value}));if(!sources.length||sources.some(s=>!s.node||!s.sub))throw Error('سرور و اشتراک همهٔ ردیف‌ها را انتخاب کن.');const d=await api('profile',{name:$('profile-name').value,sources});await load();await copy(d.url);});};
+load().then(sourceRow).catch(e=>notice(e.message));
+</script></body></html>
+NODE_EMBEDDED_HTML_EOF
+
+cat > "$STAGE/nodes_install.py" <<'NODE_EMBEDDED_INSTALL_EOF'
+"""Installer-side additive gateway patch; no changes to native services."""
+import os
+from pathlib import Path
+import shutil
+import tempfile
+import time
+
+def patch_gateway(text):
+    if 'from nodes import Nodes' in text:
+        return text
+    edits = [
+        ('from aiohttp import web\n','from aiohttp import web\nfrom nodes import Nodes\n'),
+        ('        self.agh_lock = asyncio.Lock()\n','        self.agh_lock = asyncio.Lock()\n        self.nodes = Nodes(self)\n'),
+        ('    async def start(self, app):\n','    async def start(self, app):\n        await self.nodes.start()\n'),
+        ('    async def stop(self, app):\n','    async def stop(self, app):\n        await self.nodes.stop()\n'),
+        ('    async def dispatch(self, request):\n','    async def dispatch(self, request):\n        node_response = await self.nodes.route(request)\n        if node_response is not None:\n            return node_response\n'),
+        ('        return re.sub(r"</head\\s*>", tag + "</head>", text, count=1, flags=re.I)',
+         '        if not agh:\n            tag += \'<script defer src="\' + html.escape(base, quote=True) + \'_alireza/nodes.js?v=1.0.0"></script>\'\n        return re.sub(r"</head\\s*>", tag + "</head>", text, count=1, flags=re.I)'),
+    ]
+    for old,new in edits:
+        if text.count(old)!=1:
+            raise ValueError('Unsupported gateway layout; no files have been changed.')
+        text=text.replace(old,new,1)
+    compile(text,'gateway.py','exec')
+    return text
+
+def install(root, files):
+    root=Path(root)
+    gateway=root/'gateway/gateway.py'
+    previous=gateway.read_text(encoding='utf-8')
+    updated=patch_gateway(previous)
+    compile(files['nodes.py'],'nodes.py','exec')
+    backup=Path('/var/backups/alirezapanel')/('nodes-'+str(time.time_ns()))
+    backup.mkdir(parents=True,mode=0o700)
+    paths=[root/'gateway'/name for name in ('gateway.py','nodes.py','nodes.js','nodes.html')]
+    for path in paths:
+        if path.exists(): shutil.copy2(path,backup/path.name)
+    meta=gateway.stat()
+    state=Path('/var/lib/alirezapanel-nodes/state.json')
+    if state.exists(): shutil.copy2(state,backup/'nodes-state.json')
+    cli=Path('/usr/local/bin/alirezapanel')
+    cli_update=None
+    if cli.is_file():
+        cli_text=cli.read_text(encoding='utf-8')
+        anchor='cp -a /etc/alirezapanel "$dest/config"'
+        if '/var/lib/alirezapanel-nodes "$dest/nodes"' not in cli_text and cli_text.count(anchor)==1:
+            cli_update=cli_text.replace(anchor,anchor+'\n        [[ ! -d /var/lib/alirezapanel-nodes ]] || cp -a /var/lib/alirezapanel-nodes "$dest/nodes"',1)
+            shutil.copy2(cli,backup/'alirezapanel-cli')
+    # Write all optional modules first, gateway activation last. The current
+    # process continues serving until the caller restarts only the gateway.
+    for name,content in [('nodes.py',files['nodes.py']),('nodes.js',files['nodes.js']),('nodes.html',files['nodes.html']),('gateway.py',updated)]:
+        target=root/'gateway'/name
+        fd,tmp=tempfile.mkstemp(prefix='.nodes-',dir=target.parent)
+        try:
+            with os.fdopen(fd,'w',encoding='utf-8') as stream:
+                stream.write(content); stream.flush(); os.fsync(stream.fileno())
+            os.chown(tmp,meta.st_uid,meta.st_gid); os.chmod(tmp,0o640)
+            os.replace(tmp,target)
+        finally:
+            if os.path.exists(tmp): os.unlink(tmp)
+    if cli_update is not None:
+        meta=cli.stat()
+        fd,tmp=tempfile.mkstemp(prefix='.alireza-nodes-',dir=cli.parent)
+        try:
+            with os.fdopen(fd,'w',encoding='utf-8') as stream:
+                stream.write(cli_update); stream.flush(); os.fsync(stream.fileno())
+            os.chown(tmp,meta.st_uid,meta.st_gid); os.chmod(tmp,meta.st_mode & 0o7777)
+            os.replace(tmp,cli)
+        finally:
+            if os.path.exists(tmp): os.unlink(tmp)
+    print('Previous gateway files backed up to:',backup)
+NODE_EMBEDDED_INSTALL_EOF
+
 say 'Checking the embedded integration code before changing services.'
-python3 -m py_compile "$STAGE/gateway.py" "$STAGE/manage.py"
+python3 -m py_compile "$STAGE/gateway.py" "$STAGE/manage.py" "$STAGE/nodes.py"
 python3 -c 'import aiohttp, yaml, bcrypt; print("Runtime dependencies OK")'
 if [[ -f "$ETC/owner" ]]; then
     say 'Backing up the existing installation before repair (services pause briefly).'
@@ -1979,6 +2839,7 @@ if [[ -f "$ETC/owner" ]]; then
     cp -a "$ETC" "$backup/config"
     cp -a "$ROOT/vpn" "$backup/vpn"
     cp -a "$ROOT/adguard" "$backup/adguard"
+    [[ ! -d /var/lib/alirezapanel-nodes ]] || cp -a /var/lib/alirezapanel-nodes "$backup/nodes"
     [[ ! -d "$ROOT/gateway" ]] || cp -a "$ROOT/gateway" "$backup/gateway"
     say "Backup saved at $backup"
 fi
@@ -1990,7 +2851,7 @@ install -d -o root -g root -m 700 "$ROOT/adguard"
 printf 'alirezapanel installer v1\n' > "$ETC/owner"
 install -m 755 "$STAGE/vpn-ui-amd64" "$ROOT/vpn/vpn-ui-amd64"
 install -m 755 "$STAGE/AdGuardHome/AdGuardHome" "$ROOT/adguard/AdGuardHome"
-for filename in gateway.py brand.js theme.css manage.py logo.svg; do
+for filename in gateway.py brand.js theme.css manage.py logo.svg nodes.py nodes.js nodes.html; do
     install -o root -g alirezapanel -m 640 "$STAGE/$filename" "$ROOT/gateway/$filename"
 done
 install -m 644 "$STAGE/README.txt" "$ROOT/README.txt"
@@ -2095,6 +2956,15 @@ LogRateLimitBurst=200
 WantedBy=multi-user.target
 DNSUNIT
 
+install -d -o alirezapanel -g alirezapanel -m 700 /var/lib/alirezapanel-nodes
+install -d -m 755 /etc/systemd/system/alirezapanel.service.d
+cat > /etc/systemd/system/alirezapanel.service.d/nodes.conf <<'NODE_UNIT'
+[Service]
+StateDirectory=alirezapanel-nodes
+StateDirectoryMode=0700
+ReadWritePaths=/var/lib/alirezapanel-nodes
+NODE_UNIT
+
 cat > /etc/systemd/system/alirezapanel.service <<'GATEWAYUNIT'
 [Unit]
 Description=alirezapanel unified HTTPS interface
@@ -2181,6 +3051,7 @@ case "${1:-info}" in
         trap 'systemctl start alirezapanel-dns alirezapanel-vpn alirezapanel' EXIT
         systemctl stop alirezapanel alirezapanel-vpn alirezapanel-dns
         cp -a /etc/alirezapanel "$dest/config"
+        [[ ! -d /var/lib/alirezapanel-nodes ]] || cp -a /var/lib/alirezapanel-nodes "$dest/nodes"
         cp -a /opt/alirezapanel/vpn "$dest/vpn"
         cp -a /opt/alirezapanel/adguard "$dest/adguard"
         printf 'Backup saved: %s\n' "$dest"
