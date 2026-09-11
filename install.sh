@@ -2252,22 +2252,87 @@ class Nodes:
         return data
 
     async def provision(self, request):
-        # Explicit native admin API, never SQL insertion or changes to accounts,
-        # clients, settings or protocol tables. Credentials stay on this server.
-        if self.state['service']: return
+        # Node integration only. Use the native Admins API and never write the VPN
+        # database, inbound/protocol tables, clients or core settings directly.
+        # vpn-ui v1.9.4 deliberately ignores isSuperAdmin on /admins/add; promotion
+        # is a separate /admins/update/:id operation.  The old code therefore made
+        # a connector which could log in but had no privilege to list/manage node
+        # inbounds.  Reconcile the dedicated connector on every identity request so
+        # existing installations made by the buggy version repair themselves too.
         async with self.lock:
-            if self.state['service']: return
-            credentials = {'username':'alireza-node-'+secrets.token_hex(6),'password':secrets.token_urlsafe(40)}
             base,origin,tls = self.g.vpn_settings()
-            data = dict(credentials,nickname='alirezapanel node connector',enable='true',isSuperAdmin='true')
-            async with self.g.vpn.post(origin+base+'panel/admins/add',data=data,ssl=tls,
-                headers={'Cookie':request.headers.get('Cookie',''),'Host':request.host},allow_redirects=False) as response:
-                result = json.loads(await bounded(response))
-                if response.status!=200 or result.get('success') is not True:
-                    raise web.HTTPBadGateway(text='Unable to create the node connector account.')
-            self.state['service']=credentials
-            self.state['token']=secrets.token_urlsafe(48)
-            self.save()
+            common = {'Cookie':request.headers.get('Cookie',''),'Host':request.host,
+                      'Accept':'application/json','Accept-Encoding':'identity'}
+
+            async def admin_json(method, path, data=None):
+                async with self.g.vpn.request(method, origin+base+'panel/admins/'+path,
+                    data=data, ssl=tls, headers=common, allow_redirects=False,
+                    timeout=aiohttp.ClientTimeout(total=12)) as response:
+                    raw = await bounded(response)
+                    try:
+                        result = json.loads(raw)
+                    except (TypeError, ValueError):
+                        raise web.HTTPBadGateway(text='Node connector Admin API returned an invalid response.')
+                    if response.status != 200 or result.get('success') is not True:
+                        message = str(result.get('msg') or 'Admin API request failed.')[:240]
+                        raise web.HTTPBadGateway(text='Unable to prepare the node connector account: '+message)
+                    return result
+
+            credentials = self.state.get('service')
+            if not isinstance(credentials,dict) or not credentials.get('username') or not credentials.get('password'):
+                credentials = {'username':'alireza-node-'+secrets.token_hex(6),
+                               'password':secrets.token_urlsafe(40)}
+                await admin_json('POST','add',dict(credentials,
+                    nickname='alirezapanel node connector',enable='true'))
+
+            # Find the dedicated account through the supported native API.  If an
+            # operator deleted it, recreate it rather than leaving state.json stale.
+            listing = await admin_json('GET','list')
+            admins = listing.get('obj') or []
+            account = next((item for item in admins if item.get('username') == credentials['username']), None)
+            if account is None:
+                credentials = {'username':'alireza-node-'+secrets.token_hex(6),
+                               'password':secrets.token_urlsafe(40)}
+                await admin_json('POST','add',dict(credentials,
+                    nickname='alirezapanel node connector',enable='true'))
+                listing = await admin_json('GET','list')
+                admins = listing.get('obj') or []
+                account = next((item for item in admins if item.get('username') == credentials['username']), None)
+                if account is None:
+                    raise web.HTTPBadGateway(text='Node connector account was created but could not be found.')
+
+            # Promotion is intentionally a separate native operation in vpn-ui
+            # v1.9.4. Reset only this connector's private password so state.json and
+            # the login credential cannot drift apart. No inbound or protocol data
+            # is touched by this request.
+            ident = account.get('id')
+            if not isinstance(ident,int) or ident <= 0:
+                raise web.HTTPBadGateway(text='Node connector account has an invalid id.')
+            await admin_json('POST','update/'+str(ident),{
+                'username':credentials['username'],
+                'password':credentials['password'],
+                'nickname':'alirezapanel node connector',
+                'enable':'true',
+                'isSuperAdmin':'true',
+            })
+
+            # Confirm the promotion before handing out a token/certificate. This
+            # prevents a node from looking configured while its relay API is unusable.
+            listing = await admin_json('GET','list')
+            admins = listing.get('obj') or []
+            account = next((item for item in admins if item.get('username') == credentials['username']), None)
+            if not account or account.get('isSuperAdmin') is not True or account.get('enable') is not True:
+                raise web.HTTPBadGateway(text='Node connector account could not be promoted to an enabled super-admin.')
+
+            changed = self.state.get('service') != credentials
+            self.state['service'] = credentials
+            if not self.state.get('token'):
+                self.state['token'] = secrets.token_urlsafe(48)
+                changed = True
+            if changed:
+                self.save()
+            self.cookie = ''
+            self.cookie_at = 0
 
     async def session(self, host):
         async with self.login_lock:
