@@ -2,56 +2,251 @@
 
 # 🔥 alirezapanel
 
-### یک پنل. مدیریت VPN. کنترل DNS. احراز هویت مشترک.
+### یک پنل یکپارچه برای مدیریت VPN، DNS، کاربران، Nodeها و Subscription
 
-**alirezapanel** رابط‌های کامل **VPN-UI** و **AdGuard Home** را پشت یک gateway واحد با برند یکپارچه قرار می‌دهد و احراز هویت مشترک، ناوبری یکپارچه، تنظیمات پیش‌فرض امن، مدیریت اختیاری چند Node و یک Installer تک‌فایلی را ارائه می‌کند.
+**alirezapanel** یک Integration سبک، تک‌فایلی و حرفه‌ای برای ترکیب **vpn-ui** و **AdGuard Home** پشت یک Gateway واحد است؛ بدون جایگزین‌کردن قابلیت‌های upstream و بدون نصب Docker، Node.js، npm یا build toolchain روی سرور مقصد.
 
-![Version](https://img.shields.io/badge/version-1.1.0-orange)
-![Debian](https://img.shields.io/badge/Debian-12%20%7C%2013-A81D33?logo=debian&logoColor=white)
-![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04-E95420?logo=ubuntu&logoColor=white)
-![Architecture](https://img.shields.io/badge/arch-x86__64-blue)
-![License](https://img.shields.io/badge/integration-GPL--3.0--or--later-green)
+![Version](https://img.shields.io/badge/alirezapanel-1.4.0-ff7a18?style=for-the-badge)
+![VPN UI](https://img.shields.io/badge/vpn--ui-v1.9.4-2f80ed?style=for-the-badge)
+![AdGuard Home](https://img.shields.io/badge/AdGuard%20Home-v0.107.79-67b279?style=for-the-badge)
+![Debian](https://img.shields.io/badge/Debian-12%20%7C%2013-A81D33?logo=debian&logoColor=white&style=for-the-badge)
+![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04-E95420?logo=ubuntu&logoColor=white&style=for-the-badge)
+![Arch](https://img.shields.io/badge/Arch-x86__64%20%2F%20amd64-555?style=for-the-badge)
+![License](https://img.shields.io/badge/Integration-GPL--3.0--or--later-2ea44f?style=for-the-badge)
+
+> ⚡ طراحی‌شده برای اجرای سبک روی VPSهای کم‌منبع؛ **1 vCPU / 1 GiB RAM** هدف عملی پروژه است، با این نکته که ظرفیت واقعی به پروتکل‌ها، تعداد کاربران، فیلترها و حجم ترافیک بستگی دارد.
 
 </div>
 
 ---
 
-## ✨ alirezapanel چیست؟
+## 📚 فهرست مطالب
 
-alirezapanel یک لایه‌ی سبک برای یکپارچه‌سازی است که رابط‌های وب کامل VPN-UI و AdGuard Home را زیر یک پنل عمومی واحد در کنار هم قرار می‌دهد.
-
-این پروژه برنامه‌های upstream را با نسخه‌های ناقص یا بازنویسی‌شده جایگزین **نمی‌کند**. در عوض، فایل‌های اجرایی و رابط‌های اصلی حفظ می‌شوند و یک gateway کوچک پایتونی امکانات زیر را فراهم می‌کند:
-
-- 🔐 احراز هویت مشترک
-- 🧭 ناوبری یکپارچه
-- 🎨 برندینگ یکپارچه و استایل Ember UI
-- 🛡️ دسترسی محافظت‌شده به AdGuard Home
-- 🌐 حالت‌های دسترسی Domain، IP HTTPS و HTTP
-- 🧩 پشتیبانی از چند Node
-- 💾 ابزارهای Backup و Repair
-- ❤️ Health Check داخلی
-
-کد یکپارچه‌سازی داخل Installer قرار دارد، در حالی که باینری‌های upstream با نسخه‌های مشخص‌شده هنگام نصب دانلود می‌شوند.
+- [معرفی پروژه](#-معرفی-پروژه)
+- [فلسفه طراحی](#-فلسفه-طراحی)
+- [نمای کلی معماری](#-نمای-کلی-معماری)
+- [ویژگی‌های اصلی](#-ویژگیهای-اصلی)
+- [لاگ و مصرف واقعی هر کاربر](#-لاگ-و-مصرف-واقعی-هر-کاربر)
+- [Subscription Studio](#-subscription-studio)
+- [DNS و AdGuard Home](#-dns-و-adguard-home)
+- [Nodeها و مدیریت چندسروری](#-nodeها-و-مدیریت-چندسروری)
+- [سیستم‌های پشتیبانی‌شده](#-سیستمهای-پشتیبانی‌شده)
+- [نیازمندی‌های سخت‌افزاری](#-نیازمندیهای-سختافزاری)
+- [نصب سریع از GitHub](#-نصب-سریع-از-github)
+- [حالت‌های TLS و SSL](#-حالتهای-tls-و-ssl)
+- [پورت‌ها و Firewall](#-پورتها-و-firewall)
+- [مدیریت سرویس](#-مدیریت-سرویس)
+- [Repair / Check / Self-test](#-repair--check--self-test)
+- [Backup و Upgrade](#-backup-و-upgrade)
+- [امنیت](#-امنیت)
+- [بهینه‌سازی منابع](#-بهینهسازی-منابع)
+- [محدودیت‌های مهم](#-محدودیتهای-مهم)
+- [عیب‌یابی](#-عیبیابی)
+- [اسکرین‌شات‌ها](#-اسکرینشاتها)
+- [لایسنس](#-لایسنس)
 
 ---
 
-## 🚀 ویژگی‌های برجسته
+# 🚀 معرفی پروژه
 
-### 🔐 یک ورود
+**alirezapanel** یک پنل جدید از صفر نیست؛ یک لایه‌ی Integration روی ابزارهای upstream است.
 
-مانند حالت عادی از طریق پنل VPN وارد شوید. مدیریت DNS در همان رابط یکپارچه شده و فقط برای Super Adminهای مجاز در دسترس است.
+هدف پروژه این است که:
 
-اطلاعات ورود AdGuard Home به‌صورت خصوصی روی سرور نگه‌داری می‌شود و در اختیار مرورگر قرار نمی‌گیرد.
+- رابط کامل **vpn-ui** حفظ شود.
+- رابط کامل **AdGuard Home** حفظ شود.
+- ورود کاربر از یک نقطه انجام شود.
+- DNS داخل همان محیط مدیریتی قابل دسترسی باشد.
+- برندینگ و ظاهر پنل یکپارچه شود.
+- امکانات تکمیلی مثل Node، Client Policy، گزارش مصرف و Subscription Studio اضافه شوند.
+- هیچ Framework سنگین frontend یا daemon اضافه‌ی بی‌دلیل وارد سیستم نشود.
 
-### 🛡️ رابط کامل AdGuard Home
+یعنی پروژه تلاش نمی‌کند قابلیت‌های موجود را کم کند؛ بلکه قابلیت‌های جدید را **در کنار امکانات اصلی** اضافه می‌کند.
 
-رابط واقعی AdGuard Home به‌طور کامل حفظ شده است، از جمله:
+---
+
+# 🧠 فلسفه طراحی
+
+alirezapanel بر چند اصل بنا شده است:
+
+### 1. حفظ Upstream
+
+فایل‌های اجرایی و رابط‌های اصلی vpn-ui و AdGuard Home حفظ می‌شوند. تنظیمات پروتکل، API payloadها، Routing، Reality، TLS و ساختارهای اصلی VPN به‌صورت خودسرانه بازنویسی نمی‌شوند.
+
+### 2. سبک بودن
+
+روی سرور مقصد موارد زیر نصب نمی‌شوند:
+
+- Docker
+- Node.js
+- npm
+- Go compiler
+- Build toolchain کامل
+
+Integration اصلی در همان `install.sh` قرار دارد و هنگام نصب فایل‌های لازم استخراج می‌شوند.
+
+### 3. کمترین Polling ممکن
+
+قابلیت‌های اضافه تا حد ممکن **On-demand** هستند. گزارش مصرف کاربر یا Subscription Studio فقط زمانی داده می‌خوانند که مدیر آن را باز کند.
+
+### 4. امنیت به‌جای میانبر
+
+- Credential خصوصی AdGuard به مرورگر داده نمی‌شود.
+- DNS admin مجوز جداگانه بررسی می‌کند.
+- TLS trusted در صورت درخواست واقعی استفاده می‌شود.
+- در صورت شکست issuance، پروژه بی‌صدا به self-signed downgrade نمی‌کند.
+
+### 5. قابلیت تعمیر
+
+Installer فقط برای نصب اولیه نیست؛ حالت‌های `--repair`، `--check`، `--ssl`، `--enable-nodes` و `--self-test` نیز دارد.
+
+---
+
+# 🏗 نمای کلی معماری
+
+```text
+                       Internet / Admin Browser
+                                 │
+                                 │ HTTPS / HTTP
+                                 ▼
+                    ┌──────────────────────────┐
+                    │   alirezapanel Gateway   │
+                    │        aiohttp           │
+                    │ shared auth / theme / UI │
+                    └─────────────┬────────────┘
+                                  │
+              ┌───────────────────┴───────────────────┐
+              │                                       │
+              ▼                                       ▼
+    ┌───────────────────┐                   ┌───────────────────┐
+    │      vpn-ui       │                   │   AdGuard Home    │
+    │ 127.0.0.1:18080   │                   │ 127.0.0.1:18081   │
+    └───────────────────┘                   └───────────────────┘
+              │                                       │
+              │ VPN cores / clients                   │ DNS
+              ▼                                       ▼
+       User traffic / nodes                      TCP + UDP 53
+```
+
+Gateway مسئول این بخش‌هاست:
+
+- shared authentication
+- branding
+- navigation
+- proxy امن رابط‌ها
+- DNS integration
+- Node integration
+- Client feature integrations
+- Subscription enhancements
+
+---
+
+# ✨ ویژگی‌های اصلی
+
+## 🔐 ورود یکپارچه
+
+ورود از طریق سیستم authentication پنل VPN انجام می‌شود. Gateway کوکی را خودش decode نمی‌کند و برای دسترسی حساس دوباره مجوز را از endpointهای خود vpn-ui بررسی می‌کند.
+
+## 🎨 رابط هماهنگ
+
+Theme اختصاصی پروژه با ظاهر نارنجی/زغالی روی بخش‌های Integration اعمال می‌شود و تا حد ممکن Navigation و رفتار native پنل را حفظ می‌کند.
+
+## 🧩 Client Tools
+
+در صفحه‌های مرتبط با Client/Inbound ابزارهای تکمیلی مانند:
+
+- فیلتر / Gaming policy
+- Certificate و اتصال
+- گزارش واقعی مصرف کاربر
+- Subscription Studio
+
+اضافه می‌شوند.
+
+## 🌐 مدیریت DNS
+
+AdGuard Home به‌صورت کامل داخل پنل قرار می‌گیرد، نه یک داشبورد ناقص یا API محدود.
+
+## 🖥 Multi-node
+
+Nodeهای سازگار را می‌توان به سرور اصلی متصل کرد و مدیریت Remote انجام داد.
+
+## 🛠 Repair و Health Check
+
+ابزارهای CLI برای بررسی سرویس، تعمیر Integration و بازسازی بخش‌های مدیریت‌شده وجود دارد.
+
+---
+
+# 📊 لاگ و مصرف واقعی هر کاربر
+
+یکی از قابلیت‌های جدید نسخه فعلی، نمایش **مصرف واقعی هر Client به‌صورت جداگانه** است.
+
+این قابلیت داده ساختگی تولید نمی‌کند و packet capture جدیدی هم اضافه نمی‌کند؛ بلکه تا جای ممکن از شمارنده‌های native خود vpn-ui در جدول `client_traffics` استفاده می‌کند.
+
+اطلاعات قابل نمایش شامل:
+
+- Download
+- Upload
+- Total Usage
+- Traffic Limit
+- وضعیت Client
+- رکوردهای مرتبط با Inbound
+- شناسه / Email کاربر
+
+### چرا این روش سبک است؟
+
+برای این قابلیت daemon جدید یا worker دائمی ساخته نشده است. داده‌ها در زمان بازشدن Dialog توسط مدیر خوانده می‌شوند.
+
+### نکته مهم درباره عبارت «لاگ»
+
+این بخش **لاگ مصرف و شمارنده‌های واقعی VPN** است، نه history کامل وب‌سایت‌هایی که کاربر باز کرده است.
+
+alirezapanel برای این قابلیت به‌صورت پیش‌فرض:
+
+- payload کاربران را capture نمی‌کند.
+- browsing history مستقل ذخیره نمی‌کند.
+- packet sniffer اضافه نصب نمی‌کند.
+
+این تصمیم هم برای Performance و هم برای Privacy مهم است.
+
+---
+
+# 📈 Subscription Studio
+
+**Subscription Studio** نمای مدیریتی حرفه‌ای برای مشاهده وضعیت اشتراک Client است.
+
+این بخش فرمت native subscription را خراب یا جایگزین نمی‌کند؛ بلکه یک لایه‌ی نمایشی حرفه‌ای برای مدیر فراهم می‌کند.
+
+قابلیت‌ها:
+
+- نمایش Client ID / Email
+- نمایش حجم مصرف‌شده
+- نمایش حجم باقی‌مانده
+- Upload
+- Download
+- تاریخ انقضا در صورت وجود
+- وضعیت Unlimited
+- نمودار حلقه‌ای درصد مصرف
+- نمایش Subscription IDهای ثبت‌شده
+- Copy سریع شناسه‌ها
+- طراحی هماهنگ با Theme اصلی پنل
+
+### هدف Subscription Studio
+
+به‌جای یک لینک خام و غیرقابل‌فهم، مدیر می‌تواند وضعیت حساب را به‌شکل واضح و حرفه‌ای مشاهده کند.
+
+> فرمت‌های native subscription، JSON و Clash که خود vpn-ui ارائه می‌کند حفظ می‌شوند.
+
+---
+
+# 🛡 DNS و AdGuard Home
+
+رابط کامل AdGuard Home حفظ می‌شود، شامل:
 
 - Dashboard
 - Query Log
 - Statistics
 - Filters
-- DNS blocklists
+- Blocklists
 - Allowlists
 - DNS rewrites
 - Blocked services
@@ -60,110 +255,132 @@ alirezapanel یک لایه‌ی سبک برای یکپارچه‌سازی است
 - Encryption settings
 - DHCP settings
 
-هیچ داشبورد ناقص و جایگزینی استفاده نمی‌شود.
+## Managed DNS Clients
 
-### 🌐 رابط کامل VPN-UI
+پروژه قابلیت Managed DoH Client نیز دارد.
 
-رابط مدیریت VPN upstream و قابلیت‌های Native آن همچنان در دسترس هستند. alirezapanel شناسه‌های پروتکل، payloadهای API، تنظیمات VPN، قوانین Routing یا فایل‌های اجرایی upstream را بازنویسی نمی‌کند.
+هر Client می‌تواند credential مجزا داشته باشد و بسته به تنظیمات از قابلیت‌هایی مانند:
 
-### 🧩 مدیریت چند Node
+- quota
+- query count limit
+- expiry
+- first-success activation
+- IP restriction
+- per-client filtering
+- custom upstreams
+- saved presets
 
-alirezapanel قابلیت اختیاری Node را برای اتصال چند سرور سازگار در خود دارد.
+استفاده کند.
 
-Nodeها می‌توانند با اتصال HTTPS احراز هویت‌شده به پنل اصلی اضافه شوند و دسترسی Remote به Inboundها و ساخت پروفایل‌های Subscription ترکیبی را فراهم کنند، در حالی که اطلاعات ورود Node روی خود سرور باقی می‌ماند.
+### URL Managed DoH
 
-### 🎨 Ember UI
+الگوی URL:
 
-نسخه 1.1 یک لایه‌ی بصری گرم با ترکیب نارنجی و زغالی را روی رابط‌های یکپارچه‌شده ارائه می‌کند.
+```text
+https://HOST:PANEL_PORT/dns-query/SECRET
+```
 
-Theme بخش‌هایی مانند Navigation، Cardها، Formها، Tableها، Dialogها و سایر اجزای رابط را هماهنگ می‌کند و در عین حال رنگ‌های معنادار مربوط به وضعیت و عملیات مخرب را حفظ می‌کند.
-
-کنترل‌های Native حالت روشن همچنان در دسترس هستند.
-
----
-
-## 📦 اجزای موجود
-
-| Component | Version |
-|---|---:|
-| alirezapanel integration | `1.1.0` |
-| VPN-UI | `v1.9.4` |
-| AdGuard Home | `v0.107.79` |
-
-نسخه‌های upstream روی Versionها و SHA-256 Hashهای شناخته‌شده Pin شده‌اند و به‌جای دانلود بی‌صدا از آخرین نسخه موجود، نسخه‌های مشخص و قابل‌تکرار استفاده می‌شوند.
+این URL با subscription VPN یکسان نیست و برای کلاینت‌های DoH استفاده می‌شود.
 
 ---
 
-## ✅ سیستم‌های پشتیبانی‌شده
+# 🧩 Nodeها و مدیریت چندسروری
 
-استفاده از یک **سرور تازه** به‌شدت توصیه می‌شود.
+Nodeها اختیاری هستند و به‌صورت پیش‌فرض تمام coreهای اضافه فعال نمی‌شوند.
 
-### سیستم‌عامل‌ها
-
-- Debian 12
-- Debian 13
-- Ubuntu 24.04
-
-### معماری
-
-- `x86_64 / amd64`
-
-> ARM توسط این Installer پشتیبانی نمی‌شود.
-
-### نیازمندی‌های سرور
-
-حداقل بررسی‌های نصب:
-
-- حدود **1 GiB RAM**
-- حداقل **2 GiB فضای خالی روی `/opt`**
-- `systemd`
-- دسترسی Root / sudo
-- دسترسی اینترنت به:
-  - GitHub
-  - مخازن Package توزیع
-  - DNS upstreamها
-
-برای بار کاری سبک، پروژه با درنظر گرفتن سرورهای کوچک مانند **1 vCPU / 1 GiB RAM** طراحی شده است، اما این موضوع تضمین Performance یا Capacity نیست.
-
-برای خود پنل نیازی به Go compiler، Node.js، npm، Docker یا Build Toolchain روی سرور نیست.
-
-> برخی پروتکل‌های اختیاری VPN ممکن است همچنان به Kernel Moduleها یا Packageهای upstream خود نیاز داشته باشند.
-
----
-
-## ⚡ نصب
-
-این Repository را دانلود یا Clone کنید و مطمئن شوید نام Installer برابر `install.sh` است.
-
-سپس اجرا کنید:
+برای اضافه/به‌روزرسانی قابلیت Node:
 
 ```bash
+sudo bash install.sh --enable-nodes
+```
+
+پس از فعال‌سازی، امکان مدیریت Nodeهای سازگار از پنل اصلی فراهم می‌شود.
+
+در معماری Node:
+
+- Credential روی سرور نگه‌داری می‌شود.
+- مسیرهای UI به mount مناسب تبدیل می‌شوند.
+- API و protocol identifiers به‌صورت غیرضروری بازنویسی نمی‌شوند.
+- لینک‌ها و exportها برای hostname Node مربوطه سازگار می‌شوند.
+
+برای Upgrade بهتر است نسخه Installer روی Master و Nodeها یکسان باشد.
+
+---
+
+# ✅ سیستم‌های پشتیبانی‌شده
+
+Installer فعلی برای موارد زیر طراحی شده است:
+
+| بخش | پشتیبانی |
+|---|---|
+| Debian 12 | ✅ |
+| Debian 13 | ✅ |
+| Ubuntu 24.04 | ✅ |
+| x86_64 / amd64 | ✅ |
+| ARM / ARM64 | ❌ |
+| systemd | ✅ الزامی |
+| Fresh VPS | ✅ شدیداً توصیه می‌شود |
+| Docker container معمولی | ❌ |
+
+نسخه فعلی vpn-ui استفاده‌شده در Installer برای amd64 Pin شده است؛ به همین دلیل ARM توسط Installer فعلی پشتیبانی نمی‌شود.
+
+---
+
+# 💻 نیازمندی‌های سخت‌افزاری
+
+## حداقل منطقی
+
+- 1 vCPU
+- 512 MiB RAM برای نصب بسیار سبک
+- حداقل 2 GiB فضای خالی روی `/opt`
+- دسترسی root
+- systemd فعال
+- دسترسی اینترنت
+
+## پیشنهاد پروژه
+
+- **1 vCPU**
+- **1 GiB RAM یا بیشتر**
+- SSD
+
+### توجه
+
+512 MiB حالت حداقلی است و ظرفیت آن تضمین نشده است. پروتکل‌های بیشتر، geofileهای بزرگ، filter listهای سنگین، تعداد زیاد Client و ترافیک بالا RAM بیشتری مصرف می‌کنند.
+
+---
+
+# ⚡ نصب سریع از GitHub
+
+ساده‌ترین روش:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/alirezachatgpt97-coder/alirezapanel/main/install.sh)
+```
+
+یا با `wget`:
+
+```bash
+bash <(wget -qO- https://raw.githubusercontent.com/alirezachatgpt97-coder/alirezapanel/main/install.sh)
+```
+
+### روش پیشنهادی برای بررسی فایل قبل از اجرا
+
+```bash
+curl -fLo install.sh https://raw.githubusercontent.com/alirezachatgpt97-coder/alirezapanel/main/install.sh
+chmod +x install.sh
+bash install.sh --self-test
 sudo bash install.sh
 ```
 
-در Terminal تعاملی، Installer از شما می‌پرسد پنل عمومی به چه شکلی در دسترس قرار بگیرد:
-
-```text
-1) Domain + valid SSL (Let's Encrypt)
-2) Server IP + HTTPS (self-signed SSL)
-3) Server IP/domain without SSL (plain HTTP)
-```
-
-پس از نصب موفق، URL پنل به‌صورت خودکار نمایش داده می‌شود.
-
-برای نمایش اطلاعات ورود اولیه تولیدشده:
-
-```bash
-sudo alirezapanel credentials
-```
+این روش بهتر است چون قبل از اجرا می‌توانید فایل را مشاهده و self-test کنید.
 
 ---
 
-## 🔒 حالت‌های نصب
+# 🔐 حالت‌های TLS و SSL
 
-### 1. Domain + Let's Encrypt
+Installer چهار مدل دسترسی را پشتیبانی می‌کند.
 
-برای پنل عمومی Production توصیه می‌شود.
+## 1. Domain + trusted SSL
 
 ```bash
 sudo env \
@@ -173,726 +390,479 @@ sudo env \
   bash install.sh
 ```
 
-پورت عمومی پیش‌فرض:
+Certificate trusted از Let's Encrypt دریافت می‌شود.
 
-```text
-443/TCP
+## 2. Public IP + trusted SSL
+
+```bash
+sudo env ALIREZA_TLS_MODE=ip-acme bash install.sh
 ```
 
-قبل از نصب:
+این حالت برای Certificate trusted روی IP عمومی در نسخه Installer فعلی در نظر گرفته شده است.
 
-1. رکورد IPv4 **A record** دامنه را به سرور اشاره دهید.
-2. مطمئن شوید **TCP port 80** ورودی هنگام صدور Certificate قابل دسترسی است.
-3. **TCP 443** را در Firewall سرویس‌دهنده باز کنید.
-
-هنگامی که Installer از طریق Certbot Certificate دریافت می‌کند، یک Renewal Hook نیز تنظیم می‌شود تا Certificate مربوط به Gateway پس از تمدید به‌روزرسانی شود.
-
----
-
-### 2. Server IP + HTTPS
-
-این حالت، پیش‌فرض امن برای نصب غیرتعاملی است.
+## 3. Self-signed HTTPS
 
 ```bash
 sudo env ALIREZA_TLS_MODE=ip bash install.sh
 ```
 
-پورت عمومی پیش‌فرض:
+اگر Certificate خارجی ارائه نشده باشد، Certificate self-signed ساخته می‌شود و مرورگر هشدار trust خواهد داد.
 
-```text
-8443/TCP
-```
-
-در صورتی که Certificate/Key جداگانه‌ای ارائه نشود، یک Self-signed Certificate ساخته می‌شود.
-
-مرورگر شما معمولاً هنگام استفاده از Self-signed Certificate تولیدشده هشدار Certificate نمایش می‌دهد.
-
----
-
-### 3. Plain HTTP
-
-فقط برای محیط‌های قابل اعتماد/خصوصی:
+## 4. HTTP بدون TLS
 
 ```bash
 sudo env ALIREZA_TLS_MODE=none bash install.sh
 ```
 
-پورت عمومی پیش‌فرض:
-
-```text
-8080/TCP
-```
-
-> ⚠️ حالت HTTP ترافیک بین مرورگر و پنل عمومی را رمزگذاری نمی‌کند.
+برای شبکه عمومی توصیه نمی‌شود.
 
 ---
 
-## 🔑 اطلاعات ورود سفارشی Administrator
+# 🔑 متغیرهای نصب
 
-نام کاربری پیش‌فرض Administrator برابر است با:
-
-```text
-admin
-```
-
-اگر Password مشخص نشود، یک Password تصادفی امن ساخته می‌شود.
-
-می‌توانید در **اولین نصب** اطلاعات ورود دلخواه خود را وارد کنید:
-
-```bash
-sudo env \
-  ALIREZA_USER=admin \
-  ALIREZA_PASSWORD='your-strong-password-here' \
-  bash install.sh
-```
-
-Password باید بین **16 تا 72 بایت UTF-8** باشد.
-
-اطلاعات ورود اولیه در مسیر زیر ذخیره می‌شود:
-
-```text
-/etc/alirezapanel/access.json
-```
-
-این فایل فقط برای Root قابل دسترسی است و به‌عنوان یک **رکورد بازیابی اولیه** عمل می‌کند.
-
-> تغییر Password در ادامه از داخل رابط Admin مربوط به VPN، Password جدید را با `access.json` همگام نمی‌کند.
-
-پس از اولین ورود، تغییر Password مدیر و فعال‌کردن احراز هویت دومرحله‌ای موجود در پنل upstream توصیه می‌شود.
-
----
-
-## 🔐 استفاده از TLS Certificate شخصی
-
-Certificate Chain و Private Key متناظر را هر دو وارد کنید:
-
-```bash
-sudo env \
-  ALIREZA_TLS_MODE=ip \
-  ALIREZA_HOST=203.0.113.10 \
-  ALIREZA_CERT=/root/fullchain.pem \
-  ALIREZA_KEY=/root/privkey.pem \
-  bash install.sh
-```
-
-هر دو Variable باید هم‌زمان ارائه شوند.
-
-فایل‌های TLS مربوط به Gateway در مسیر زیر ذخیره می‌شوند:
-
-```text
-/etc/alirezapanel/tls/
-```
-
----
-
-## ⚙️ متغیرهای محیطی
-
-| Variable | Description |
+| Variable | توضیح |
 |---|---|
-| `ALIREZA_HOST` | IP عمومی یا Domain بدون Scheme و Port |
-| `ALIREZA_PORT` | پورت عمومی پنل |
-| `ALIREZA_TLS_MODE` | `domain`، `ip` یا `none` |
-| `ALIREZA_ACME_EMAIL` | ایمیل اختیاری Let's Encrypt در حالت Domain |
-| `ALIREZA_USER` | نام کاربری اولیه Administrator؛ پیش‌فرض: `admin` |
-| `ALIREZA_PASSWORD` | Password اولیه، بین 16 تا 72 بایت UTF-8 |
-| `ALIREZA_CERT` | PEM Certificate Chain موجود |
-| `ALIREZA_KEY` | PEM Private Key متناظر با `ALIREZA_CERT` |
+| `ALIREZA_HOST` | Domain یا IP عمومی بدون scheme |
+| `ALIREZA_PORT` | پورت عمومی Gateway |
+| `ALIREZA_TLS_MODE` | `domain`, `ip-acme`, `ip`, `none` |
+| `ALIREZA_ACME_EMAIL` | ایمیل Let's Encrypt |
+| `ALIREZA_USER` | نام مدیر اولیه |
+| `ALIREZA_PASSWORD` | رمز مدیر اولیه، بین 16 تا 72 بایت UTF-8 |
+| `ALIREZA_CERT` | Certificate PEM خارجی |
+| `ALIREZA_KEY` | Private key متناظر |
 
-پورت‌های پیش‌فرض بر اساس TLS Mode:
-
-| Mode | Default |
-|---|---:|
-| `domain` | `443` |
-| `ip` | `8443` |
-| `none` | `8080` |
+اگر Password داده نشود، Installer رمز امن تصادفی می‌سازد.
 
 ---
 
-## 🔥 Firewall / پورت‌های شبکه
+# 🌐 پورت‌ها و Firewall
 
-alirezapanel عمداً Ruleهای Hosting Firewall را به‌صورت خودکار ایجاد **نمی‌کند**.
+پورت‌های داخلی/پیش‌فرض مهم:
 
-پورت‌های معمول:
+| Port | Protocol | کاربرد |
+|---:|---|---|
+| `8443` | TCP | Gateway عمومی HTTPS در تنظیمات رایج |
+| `8080` | TCP | حالت HTTP بدون TLS |
+| `18080` | TCP / loopback | vpn-ui backend |
+| `18081` | TCP / loopback | AdGuard Home web backend |
+| `2097` | TCP / loopback | Subscription listener داخلی |
+| `53` | TCP + UDP | DNS resolver |
 
-| Port | Protocol | Purpose | Exposure |
-|---|---|---|---|
-| `443` | TCP | پنل عمومی در حالت Domain TLS | Public |
-| `8443` | TCP | پنل عمومی در حالت پیش‌فرض IP HTTPS | Public |
-| `8080` | TCP | پنل عمومی در حالت HTTP | Public if selected |
-| `53` | TCP/UDP | AdGuard DNS resolver | Server IPv4 |
-| `18080` | TCP | VPN web backend | Loopback only |
-| `18081` | TCP | AdGuard HTTP backend | Loopback only |
+پورت‌های VPN وابسته به Inboundها و پروتکل‌هایی هستند که خودتان فعال می‌کنید.
 
-همچنین باید پورت‌های موردنیاز پروتکل‌ها/Inboundهای VPN که فعال می‌کنید را باز کنید.
-
-Installer فایل `systemd-resolved`، مسیر `/etc/resolv.conf` یا Ruleهای سراسری DNS NAT/redirect را تغییر نمی‌دهد.
+> پورت‌های loopback نباید مستقیماً Public شوند.
 
 ---
 
-## 🛡️ مدل احراز هویت و امنیت
+# ⚙️ مدیریت سرویس
 
-Gateway عمومی طوری طراحی شده است که برنامه‌های upstream مجبور نباشند رابط‌های مدیریتی خود را مستقیماً در اینترنت قرار دهند.
+بررسی Gateway:
 
-### VPN backend
-
-VPN web backend روی آدرس زیر تنظیم می‌شود:
-
-```text
-127.0.0.1:18080
+```bash
+systemctl status alirezapanel.service
 ```
 
-### AdGuard Home backend
+VPN backend:
 
-سرویس HTTP مدیریتی AdGuard Home روی آدرس زیر Pin می‌شود:
-
-```text
-127.0.0.1:18081
+```bash
+systemctl status alirezapanel-vpn.service
 ```
 
-### مجوز دسترسی DNS
+DNS:
 
-مدیریت DNS از طریق رابط یکپارچه وب به یک Session معتبر Super Admin در VPN نیاز دارد.
+```bash
+systemctl status alirezapanel-dns.service
+```
 
-Gateway به‌جای Decode کردن یا اعتماد مستقل به Session Cookie، مجوز را از VPN backend بررسی می‌کند.
+Logها:
 
-Username/Password خصوصی AdGuard Home و AdGuard Session Cookie به مرورگر ارسال نمی‌شوند.
-
-### سخت‌سازی Gateway
-
-Unit مربوط به Gateway در systemd از چندین گزینه Hardening استفاده می‌کند، از جمله:
-
-- `NoNewPrivileges`
-- Private temporary directory
-- Strict filesystem protection
-- Home directory protection
-- Kernel tunable protection
-- Control-group protection
-- Restricted SUID/SGID behavior
-- Restricted address families
-- Limited capability set
+```bash
+journalctl -u alirezapanel.service -n 100 --no-pager
+journalctl -u alirezapanel-vpn.service -n 100 --no-pager
+journalctl -u alirezapanel-dns.service -n 100 --no-pager
+```
 
 ---
 
-## 🧩 Nodes
+# 🧰 Repair / Check / Self-test
 
-پشتیبانی از Node در پروژه وجود دارد اما عمداً به‌صورت جداگانه فعال می‌شود.
-
-روی هر سروری که باید به‌عنوان Node مشارکت کند، اجرا کنید:
-
-```bash
-sudo bash install.sh --enable-nodes
-```
-
-این دستور بخش مربوط به Node را بدون نصب مجدد VPN یا DNS اضافه یا به‌روزرسانی می‌کند.
-
-پیاده‌سازی از اتصال‌های احراز هویت‌شده Node پشتیبانی می‌کند و هویت Node Remote را اعتبارسنجی می‌کند.
-
-محدودیت‌های فعلی پیاده‌سازی:
-
-- حداکثر **64 Node متصل**
-- حداکثر **32 منبع Subscription** در یک Profile ترکیبی
-
-احراز هویت Node API به HTTPS و Bearer Token نیاز دارد.
-
-### روند پیشنهادی Node
-
-1. alirezapanel را روی سرور اصلی نصب کنید.
-2. alirezapanel را روی هر Node نصب کنید.
-3. در صورت نیاز `--enable-nodes` را اجرا کنید.
-4. بخش **Nodes** را در پنل باز کنید.
-5. Node Connector را فعال کنید.
-6. Node Remote را با اطلاعات اتصال آن اضافه کنید.
-7. قبل از استفاده از منابع Remote، اتصال Node را Check کنید.
-8. در صورت نیاز Profileهای Subscription ترکیبی بسازید.
-
----
-
-## 🖥️ CLI مدیریت
-
-فرآیند نصب فایل زیر را ایجاد می‌کند:
-
-```text
-/usr/local/bin/alirezapanel
-```
-
-دستورهای کاربردی:
-
-```bash
-sudo alirezapanel info
-```
-
-نمایش URL عمومی و مسیرهای نصب.
-
-```bash
-sudo alirezapanel credentials
-```
-
-نمایش اطلاعات ورود **اولیه** Administrator.
-
-```bash
-sudo alirezapanel status
-```
-
-نمایش وضعیت سه سرویس مدیریت‌شده.
-
-```bash
-sudo alirezapanel check
-```
-
-اجرای بررسی سرویس‌ها، Gateway عمومی، کنترل دسترسی و DNS.
-
-```bash
-sudo alirezapanel restart
-```
-
-Restart کردن Stack مدیریت‌شده با رعایت ترتیب وابستگی‌ها و بررسی آمادگی پنل.
-
-```bash
-sudo alirezapanel logs
-```
-
-نمایش Logهای اخیر Gateway، VPN و DNS.
-
-```bash
-sudo alirezapanel backup
-```
-
-ساخت Backup دستی و سازگار.
-
-```bash
-sudo alirezapanel vpn info
-```
-
-دسترسی به CLI اصلی مدیریت VPN.
-
-```bash
-sudo alirezapanel help
-```
-
-نمایش مستندات نصب‌شده پروژه.
-
----
-
-## 🩺 Health Check
-
-همچنین می‌توانید Checker فقط‌خواندنی Installer را اجرا کنید:
+## Health Check
 
 ```bash
 sudo bash install.sh --check
 ```
 
-Diagnostics داخلی بخش‌های مهم Stack را بررسی می‌کند، از جمله:
+یا پس از نصب:
 
-- وضعیت سرویس‌های systemd
-- در دسترس بودن Gateway عمومی
-- آمادگی Branding/Integration
-- رد دسترسی ناشناس به مدیریت DNS
-- DNS resolution
-- اتصال سرویس‌های یکپارچه
+```bash
+sudo alirezapanel check
+```
 
-در نصب تازه، پیش از اعلام موفقیت، Checkهای عمیق‌تری برای Login/Integration انجام می‌شود.
-
-Installer فقط زمانی نصب را موفق اعلام می‌کند که بررسی‌های خودکار آن با موفقیت عبور کنند.
-
----
-
-## 🔧 Repair
-
-برای نصب مجدد Integration و باینری‌های Pin‌شده upstream در حالی که تنظیمات Installation حفظ شوند:
+## Repair
 
 ```bash
 sudo bash install.sh --repair
 ```
 
-Repair:
+Repair برای بازگردانی فایل‌های Integration و باینری‌های Pin‌شده استفاده می‌شود و تنظیمات/کاربران موجود را تا حد طراحی پروژه حفظ می‌کند.
 
-- Backup ایجاد می‌کند
-- Userها و Settingها را حفظ می‌کند
-- Credentials/Configuration را حفظ می‌کند
-- Integration/Binaryهای Pin‌شده را بازیابی می‌کند
-- در صورت نیاز سرویس‌ها را موقتاً Pause می‌کند
-- نصب را دوباره اعتبارسنجی می‌کند
+## SSL Manager
 
-Repair عمداً در برابر تغییر Versionهای upstream محافظه‌کارانه عمل می‌کند.
+```bash
+sudo bash install.sh --ssl
+```
 
-اگر Database نصب‌شده VPN یا DNS قبلاً توسط Version جدیدتر upstream Migration شده باشد، Installer از Downgrade بی‌صدا خودداری می‌کند.
+یا:
 
----
+```bash
+sudo alirezapanel ssl
+```
 
-## 🔄 اصلاح صفحه Restart
+## Self-test
 
-برای نصب سازگار موجود، اصلاح Integration مربوط به صفحه Restart را می‌توان به‌صورت مستقل اعمال کرد:
+```bash
+bash install.sh --self-test
+```
+
+Self-test بدون نصب:
+
+- Bash syntax را بررسی می‌کند.
+- Python moduleهای embedشده را compile می‌کند.
+
+## Restart-page fix
 
 ```bash
 sudo bash install.sh --fix-restart
 ```
 
-پیش از اعمال Patch، از فایل Gateway یک Backup ساخته می‌شود.
-
 ---
 
-## 💾 Backupها
+# 💾 Backup و Upgrade
 
-برای ایجاد Backup دستی اجرا کنید:
+قبل از Repair یا Upgrade مهم از سرور Snapshot بگیرید.
 
-```bash
-sudo alirezapanel backup
-```
-
-Backupها در مسیر زیر ذخیره می‌شوند:
-
-```text
-/var/backups/alirezapanel/
-```
-
-Backup شامل Configuration/Stateهای مهم مانند موارد زیر است:
-
-- `/etc/alirezapanel`
-- فایل‌ها و Database مربوط به VPN
-- فایل‌های AdGuard Home
-- State مربوط به Nodeها، در صورت وجود
-
-سرویس‌ها برای مدت کوتاهی Stop می‌شوند تا State کپی‌شده سازگار باشد.
-
-دایرکتوری‌های Backup برای دسترسی Root-only در نظر گرفته شده‌اند.
-
----
-
-## 📁 مسیرهای مهم
-
-| Path | Purpose |
-|---|---|
-| `/opt/alirezapanel` | دایرکتوری اصلی نصب |
-| `/opt/alirezapanel/gateway` | Gateway یکپارچه‌سازی و Assetهای UI |
-| `/opt/alirezapanel/vpn` | فایل اجرایی و State مربوط به VPN-UI |
-| `/opt/alirezapanel/adguard` | فایل اجرایی و Configuration مربوط به AdGuard Home |
-| `/etc/alirezapanel` | Configuration مربوط به alirezapanel |
-| `/etc/alirezapanel/gateway.json` | Configuration مربوط به Gateway عمومی |
-| `/etc/alirezapanel/access.json` | رکورد بازیابی اطلاعات ورود اولیه |
-| `/etc/alirezapanel/tls` | TLS Certificate/Key مربوط به Gateway |
-| `/var/lib/alirezapanel-nodes` | State مربوط به Node |
-| `/var/backups/alirezapanel` | Backupها |
-| `/usr/local/bin/alirezapanel` | Management CLI |
-
----
-
-## ⚙️ سرویس‌های systemd
-
-alirezapanel سه سرویس اصلی را مدیریت می‌کند:
-
-```text
-alirezapanel.service
-alirezapanel-vpn.service
-alirezapanel-dns.service
-```
-
-می‌توانید وضعیت آن‌ها را با دستور زیر بررسی کنید:
-
-```bash
-sudo systemctl status \
-  alirezapanel \
-  alirezapanel-vpn \
-  alirezapanel-dns
-```
-
-یا Logهای ترکیبی اخیر را با دستور زیر ببینید:
-
-```bash
-sudo alirezapanel logs
-```
-
----
-
-## 🌍 رفتار DNS
-
-AdGuard Home روی IPv4 اصلی شناسایی‌شده سرور و Port `53` گوش می‌دهد.
-
-Integration عمداً همه درخواست‌های DNS مربوط به VPN یا Host را مجبور نمی‌کند از AdGuard عبور کنند.
-
-این کار به حفظ موارد زیر کمک می‌کند:
-
-- Xray routing
-- Split routing
-- SSH/VPN outbounds
-- رفتار شبکه خصوصی
-- Routing و Limitهای هر Account
-
-برنامه‌هایی که از DNS رمزگذاری‌شده خود، سرویس‌های Third-party DoH/DoT یا DNS Traffic خارج از Tunnel استفاده می‌کنند، به‌اجبار Intercept نمی‌شوند.
-
-اگر Attribution مربوط به DNS برای Setup شما مهم است، Client/Protocol انتخابی را Test کنید و AdGuard Query Log را بررسی کنید.
-
-> ⚠️ یک Recursive DNS Resolver بدون محدودیت را در اختیار Clientهای دلخواه اینترنت قرار ندهید. Firewall و Allowed Clientها را به‌شکل مناسب تنظیم کنید.
-
----
-
-## 📊 تنظیمات پیش‌فرض منابع
-
-Installer با تنظیمات پیش‌فرض محافظه‌کارانه ارائه می‌شود تا روی سرورهای کوچک‌تر قابل استفاده بماند.
-
-نمونه‌ها:
-
-- AdGuard cache: **4 MiB**
-- Query-log memory buffer: **500 entries**
-- Query-log retention: **24 hours**
-- Statistics retention: **24 hours**
-- Concurrent DNS queries: **100**
-- VPN Go soft heap target: **300 MiB**
-- AdGuard Go soft heap target: **160 MiB**
-
-این مقادیر Hard Limit برای کل Memory نیستند.
-
-Memory Usage واقعی همچنین به VPN Processهای فعال، میزان Traffic، Filter Listها، Kernel Moduleها و Workloadهای دیگر بستگی دارد.
-
-Gateway، Uploadها، Downloadها و WebSocketها را به‌صورت Stream منتقل می‌کند و آن‌ها را به‌طور کامل در Memory Buffer نمی‌کند. تبدیل HTML به‌صورت جداگانه محدود شده است.
-
----
-
-## 🧠 نکات Configuration
-
-VPN-UI و AdGuard Home مدل Configuration اصلی و Native خود را حفظ می‌کنند.
-
-Configuration اضافی مربوط به Gateway عمومی در مسیر زیر قرار دارد:
-
-```text
-/etc/alirezapanel/gateway.json
-```
-
-اگر Settingهای Gateway را دستی تغییر دادید، اجرا کنید:
-
-```bash
-sudo systemctl restart alirezapanel
-```
-
-VPN web port یک **پورت داخلی backend** است، نه پورت عمومی alirezapanel.
-
-Backendهای مدیریتی Native را روی Loopback نگه دارید، مگر اینکه کاملاً پیامدهای امنیتی Public کردن آن‌ها را بدانید و بپذیرید.
-
----
-
-## ⬆️ به‌روزرسانی
-
-کنترل‌های Update مربوط به upstream ممکن است همچنان داخل رابط‌های Native آن‌ها دیده شوند، اما Update کردن یک Component از upstream می‌تواند UI، API یا Database Schema آن را تغییر دهد.
-
-پیش از هر Update در upstream:
-
-```bash
-sudo alirezapanel backup
-```
-
-سپس Integration را بررسی کنید:
-
-```bash
-sudo alirezapanel check
-```
-
-Installer عمداً Versionها و Checksumهای upstream را Pin می‌کند.
-
-هیچ فرآیند Background Auto-update برای Integration مربوط به alirezapanel وجود ندارد.
-
-> ⚠️ اگر یک Component از upstream به‌روزرسانی شده، فرض نکنید `--repair` می‌تواند با امنیت آن را Downgrade کند. از Integration Version سازگار استفاده کنید یا Backup متناظر را Restore کنید.
-
----
-
-## 🚫 نصب‌های موجود
-
-Installer برای سرور تازه طراحی شده است.
-
-این Installer عمداً از Overwrite یا Migration خودکار نصب‌های مستقل شناسایی‌شده مانند فایل‌های موجود VPN-UI/x-ui/AdGuard Home یا Serviceهای systemd متداخل خودداری می‌کند.
-
-Migration خودکار از یک نصب مستقل موجود در نظر گرفته نشده است.
-
----
-
-## 🔍 عیب‌یابی
-
-### ابتدا همه‌چیز را بررسی کنید
-
-```bash
-sudo alirezapanel check
-```
-
-### سرویس‌ها را بررسی کنید
-
-```bash
-sudo alirezapanel status
-```
-
-### Logها را بخوانید
-
-```bash
-sudo alirezapanel logs
-```
-
-یا به‌صورت مستقیم:
-
-```bash
-sudo journalctl \
-  -u alirezapanel \
-  -u alirezapanel-vpn \
-  -u alirezapanel-dns \
-  -n 100 \
-  --no-pager
-```
-
-### Repair کردن نصب آسیب‌دیده
+دستور معمول برای ارتقای Integration با همان نسخه‌های سازگار:
 
 ```bash
 sudo bash install.sh --repair
 ```
 
-### مشکلات رایج نصب
+Installer در بخش‌های مدیریت‌شده Backup ایجاد می‌کند و از downgrade خاموش databaseهای ناسازگار جلوگیری می‌کند.
 
-**صدور Certificate دامنه ناموفق است**
-
-- بررسی کنید A Record به همین سرور اشاره کند.
-- بررسی کنید TCP `80` ورودی باز باشد.
-- بررسی کنید سرور به Let's Encrypt دسترسی داشته باشد.
-
-**پنل Start نمی‌شود**
-
-- بررسی کنید پورت عمومی انتخاب‌شده قبلاً اشغال نشده باشد.
-- بررسی کنید Portهای `18080` و `18081` اشغال نباشند.
-- `sudo alirezapanel logs` را اجرا کنید.
-
-**DNS Check ناموفق است**
-
-- TCP/UDP Port `53` را بررسی کنید.
-- مطمئن شوید سرویس متداخل دیگری Address/Port لازم را اشغال نکرده باشد.
-- اتصال DNS upstream را بررسی کنید.
-- Firewall/Security Group سرویس‌دهنده را بررسی کنید.
+برای Master/Node پیشنهاد می‌شود همه سرورها از نسخه یکسان Installer استفاده کنند.
 
 ---
 
-## 🔐 توصیه‌های امنیتی
+# 🔒 امنیت
 
-برای Deployment متصل به اینترنت:
+alirezapanel در طراحی فعلی چند لایه محافظتی دارد:
 
-1. **Domain + TLS معتبر** را ترجیح دهید.
-2. پس از اولین Login، Password اولیه Administrator را تغییر دهید.
-3. احراز هویت دومرحله‌ای موجود را فعال کنید.
-4. `/etc/alirezapanel` و Backupها را Root-only نگه دارید.
-5. پورت‌های Backend یعنی `18080` و `18081` را به‌صورت عمومی در دسترس قرار ندهید.
-6. در صورت نیاز دسترسی Public DNS را محدود کنید.
-7. فقط پورت‌های VPN که واقعاً استفاده می‌کنید باز کنید.
-8. پیش از Upgradeهای upstream یک Backup بگیرید.
-9. بعد از تغییر Configuration، `alirezapanel check` را اجرا کنید.
-10. سیستم‌عامل و Packageهای امنیتی را به‌روز نگه دارید.
+- Gateway عمومی و backendهای خصوصی جدا هستند.
+- vpn-ui و AdGuard Web به loopback bind می‌شوند.
+- Credential خصوصی AdGuard در browser expose نمی‌شود.
+- درخواست‌های DNS admin نیاز به session معتبر دارند.
+- Same-origin validation روی routeهای integration اعمال می‌شود.
+- Certificate/Key در مسیر مدیریت‌شده سرور نگه‌داری می‌شوند.
+- پسورد اولیه روی command line log نمی‌شود.
+- Binaryهای upstream با Version و SHA256 مشخص Pin می‌شوند.
+- Repair در صورت تشخیص version mismatch خطرناک، بی‌صدا downgrade انجام نمی‌دهد.
 
----
+### توصیه‌های Production
 
-## 🧱 معماری
-
-یک جریان ساده‌شده درخواست به شکل زیر است:
-
-```text
-                         ┌──────────────────────┐
-                         │      Browser         │
-                         └──────────┬───────────┘
-                                    │
-                           HTTPS / HTTP
-                                    │
-                         ┌──────────▼───────────┐
-                         │  alirezapanel Gateway│
-                         │   Shared Auth + UI   │
-                         └──────┬────────┬──────┘
-                                │        │
-                 127.0.0.1:18080│        │127.0.0.1:18081
-                                │        │
-                    ┌───────────▼──┐  ┌──▼──────────────┐
-                    │    VPN-UI    │  │  AdGuard Home   │
-                    │   Backend    │  │ Web Management  │
-                    └──────────────┘  └────────┬────────┘
-                                              │
-                                         TCP / UDP 53
-                                              │
-                                      ┌───────▼───────┐
-                                      │  DNS Clients  │
-                                      └───────────────┘
-```
-
-Gateway عمومی، ورودی مدیریتی موردنظر پروژه است. Backendهای مدیریتی Native روی Loopback خصوصی باقی می‌مانند.
+- از trusted TLS استفاده کنید.
+- 2FA پنل upstream را فعال کنید.
+- فقط پورت‌های لازم را Public کنید.
+- SSH را محدود کنید.
+- از UFW/nftables یا Firewall provider استفاده کنید.
+- از Snapshot و Backup منظم استفاده کنید.
+- DNS resolver را بدون سیاست مناسب به اینترنت عمومی باز نگذارید.
 
 ---
 
-## ✅ اهداف طراحی
+# ⚙️ بهینه‌سازی منابع
 
-alirezapanel تلاش می‌کند:
+پروژه برای VPSهای کوچک طراحی شده است.
 
-- برنامه‌های upstream را دست‌نخورده نگه دارد
-- از بازنویسی غیرضروری Protocol/Configuration جلوگیری کند
-- از افشای اطلاعات ورود خصوصی AdGuard جلوگیری کند
-- از Intercept سراسری DNS جلوگیری کند
-- صفحه‌های Setting Native را حفظ کند
-- نصب قابل‌تکرار با Binaryهای Pin‌شده فراهم کند
-- ابزارهای کاربردی Repair، Backup و Diagnostic ارائه دهد
-- تجربه مدیریتی عمومی را یکپارچه نگه دارد
-- روی VPSهای با منابع محدود عملی باقی بماند
+مهم‌ترین تصمیم‌های Performance:
 
----
+- بدون Node.js runtime
+- بدون Docker
+- بدون frontend framework سنگین جدید
+- بدون daemon جداگانه برای Subscription Studio
+- بدون polling دائمی برای گزارش مصرف کاربران
+- cache و retention محدود AdGuard
+- استفاده از loopback برای backendهای داخلی
+- اجرای قابلیت‌ها به‌صورت On-demand
+- native coreهای اختیاری تا زمان نیاز فعال نمی‌شوند
 
-## ⚠️ محدودیت‌ها
+### تنظیمات سبک AdGuard
 
-این محدودیت‌ها را در نظر داشته باشید:
+پیکربندی اولیه روی مقادیر محافظه‌کارانه‌ای قرار می‌گیرد، از جمله cache کوچک و retention کوتاه‌تر برای Query Log و Statistics.
 
-- فقط Debian 12/13 و Ubuntu 24.04 توسط این Installer پشتیبانی می‌شوند.
-- فقط x86_64/amd64 پشتیبانی می‌شود.
-- استفاده از سرور تازه انتظار می‌رود.
-- سازگاری Protocolهای upstream همچنان به پروژه upstream مربوط است.
-- بعضی Protocolهای VPN ممکن است به Kernel Module/Packageهای اضافه نیاز داشته باشند.
-- Listenerهای Native مربوط به DHCP/Encrypted-DNS به Network Configuration خود نیاز دارند.
-- تنظیمات پیش‌فرض Resource تضمین نمی‌کنند هر Workload داخل 1 GiB RAM جا شود.
-- تغییرات آینده UI/API/Schema در upstream ممکن است به Integration به‌روزشده نیاز داشته باشد.
-- نصب‌های مستقل موجود به‌صورت خودکار Migration نمی‌شوند.
+با این حال **Go memory target یک hard memory cap نیست** و هیچ نرم‌افزاری نمی‌تواند در تمام workloadها مصرف ثابت 1 GiB را تضمین کند.
 
 ---
 
-## 📜 License و Attribution
+# ⚠️ محدودیت‌های مهم
 
-کد Integration مربوط به alirezapanel با License زیر منتشر می‌شود:
+برای شفافیت:
 
-**GPL-3.0-or-later**
-
-پروژه‌های upstream که Bundle یا Download می‌شوند، License، Copyright Notice، نام، Interface و Attribution خود را حفظ می‌کنند.
-
-alirezapanel یک Integration مستقل است و به‌عنوان جایگزین پروژه‌های upstream معرفی نمی‌شود.
-
-هنگام انتشار Repository، فایل‌های License و Source/Attribution مربوط به upstream که توسط Installer ایجاد یا ارائه می‌شوند را حفظ کنید.
+1. **1 GiB RAM تضمین ظرفیت نامحدود نیست.** تعداد زیاد Client، فیلترهای سنگین و coreهای مختلف RAM بیشتری می‌خواهند.
+2. ARM پشتیبانی نمی‌شود.
+3. Migration خودکار از هر نصب قبلی vpn-ui/x-ui/AdGuard تضمین نشده و Fresh Server توصیه می‌شود.
+4. DNS per-client نمی‌تواند هر نوع ترافیک رمزگذاری‌شده یا DNS خارج از Tunnel را شناسایی کند.
+5. گزارش مصرف Client معادل browsing-history نیست.
+6. Self-signed TLS معتبر عمومی نیست.
+7. Public DNS port 53 باید با دقت و ACL مناسب استفاده شود.
+8. رفتار protocolهای native همچنان تحت محدودیت‌ها و قابلیت‌های upstream است.
 
 ---
 
-## 🤝 مشارکت
+# 🧯 عیب‌یابی
 
-Issueها و Pull Requestها پذیرفته می‌شوند.
-
-هنگام گزارش مشکل، لطفاً خروجی این دستورها را ارائه کنید:
+## پنل بالا نمی‌آید
 
 ```bash
 sudo alirezapanel check
-sudo alirezapanel status
+systemctl status alirezapanel.service
+journalctl -u alirezapanel.service -n 200 --no-pager
 ```
 
-برای مشکلات مربوط به Log، خروجی مرتبط دستور زیر را نیز ارائه کنید:
+سپس در صورت نیاز:
 
 ```bash
-sudo alirezapanel logs
+sudo bash install.sh --repair
 ```
 
-قبل از انتشار Logها به‌صورت عمومی، هر IP خصوصی، Domain، Credential، Token، Subscription URL یا اطلاعات حساس دیگر را حذف کنید.
+## VPN UI مشکل دارد
+
+```bash
+systemctl status alirezapanel-vpn.service
+journalctl -u alirezapanel-vpn.service -n 200 --no-pager
+```
+
+## DNS مشکل دارد
+
+```bash
+systemctl status alirezapanel-dns.service
+journalctl -u alirezapanel-dns.service -n 200 --no-pager
+```
+
+بررسی Port 53:
+
+```bash
+ss -lntup | grep ':53 '
+```
+
+## SSL مشکل دارد
+
+```bash
+sudo alirezapanel ssl status
+```
+
+Renew check:
+
+```bash
+sudo alirezapanel ssl renew
+```
 
 ---
 
-## ⭐ حمایت از پروژه
+# 🖼 اسکرین‌شات‌ها
 
-اگر alirezapanel برای شما مفید است، می‌توانید Repository را Star کنید.
+برای README حرفه‌ای پیشنهاد می‌شود تصاویر واقعی پنل را در مسیر زیر قرار دهید:
 
-این کار به کاربران دیگر کمک می‌کند پروژه را پیدا کنند و دنبال کردن توسعه‌های آینده را آسان‌تر می‌کند.
+```text
+docs/images/
+├── dashboard.png
+├── clients.png
+├── user-usage.png
+├── subscription-studio.png
+├── dns-dashboard.png
+└── nodes.png
+```
+
+سپس این بخش به‌صورت خودکار در GitHub نمایش داده می‌شود:
+
+## Dashboard
+
+![Dashboard](docs/images/dashboard.png)
+
+## Client management
+
+![Clients](docs/images/clients.png)
+
+## User usage
+
+![User usage](docs/images/user-usage.png)
+
+## Subscription Studio
+
+![Subscription Studio](docs/images/subscription-studio.png)
+
+## DNS
+
+![DNS Dashboard](docs/images/dns-dashboard.png)
+
+## Nodes
+
+![Nodes](docs/images/nodes.png)
+
+> اگر هنوز تصاویر را آپلود نکرده‌اید، GitHub فقط placeholder شکسته نشان می‌دهد؛ بنابراین بهتر است بعد از تهیه Screenshotها این مسیرها را اضافه کنید.
+
+---
+
+# 📦 نسخه‌های Pin شده
+
+| Component | Version |
+|---|---:|
+| alirezapanel Integration | `1.4.0` |
+| vpn-ui | `v1.9.4` |
+| AdGuard Home | `v0.107.79` |
+
+Installer علاوه بر Version، SHA256 باینری‌های upstream را نیز بررسی می‌کند.
+
+---
+
+# 📁 مسیرهای مهم
+
+| مسیر | کاربرد |
+|---|---|
+| `/opt/alirezapanel` | فایل‌های اصلی runtime |
+| `/etc/alirezapanel` | تنظیمات و state مدیریت‌شده |
+| `/etc/alirezapanel/access.json` | اطلاعات ورود اولیه / recovery record |
+| `/etc/alirezapanel/tls/` | Certificate و Key Gateway |
+| `/var/lib/alirezapanel-nodes` | state خصوصی Nodeها |
+
+---
+
+# 🧪 بررسی پس از نصب
+
+بعد از نصب:
+
+```bash
+sudo alirezapanel check
+```
+
+و وضعیت سرویس‌ها:
+
+```bash
+systemctl --no-pager --full status \
+  alirezapanel.service \
+  alirezapanel-vpn.service \
+  alirezapanel-dns.service
+```
+
+همچنین Firewall و DNS خارجی را از یک دستگاه دیگر تست کنید.
+
+---
+
+# 🧷 فرمان‌های پرکاربرد
+
+```bash
+# نصب
+sudo bash install.sh
+
+# بررسی
+sudo bash install.sh --check
+
+# تعمیر
+sudo bash install.sh --repair
+
+# تنظیم SSL
+sudo bash install.sh --ssl
+
+# فعال/آپدیت Node
+sudo bash install.sh --enable-nodes
+
+# فقط Fix صفحه Restart
+sudo bash install.sh --fix-restart
+
+# Self-test بدون نصب
+bash install.sh --self-test
+
+# اطلاعات پنل
+sudo alirezapanel info
+
+# Credential اولیه
+sudo alirezapanel credentials
+
+# Check نصب‌شده
+sudo alirezapanel check
+
+# SSL status
+sudo alirezapanel ssl status
+```
+
+---
+
+# 🌟 چرا alirezapanel؟
+
+اگر می‌خواهید روی یک VPS سبک:
+
+- VPN مدیریت کنید،
+- DNS حرفه‌ای داشته باشید،
+- چند Node کنترل کنید،
+- مصرف Clientها را جداگانه ببینید،
+- Subscriptionها را حرفه‌ای‌تر مدیریت کنید،
+- و در عین حال UI و قابلیت‌های native ابزارهای اصلی را از دست ندهید،
+
+alirezapanel برای همین سناریو طراحی شده است.
+
+---
+
+# 🤝 مشارکت
+
+Issue و Pull Request برای:
+
+- Bug fix
+- Documentation
+- UI improvement
+- Performance improvement
+- Compatibility testing
+- Security hardening
+
+خوش‌آمد است.
+
+هنگام گزارش Bug، لطفاً موارد زیر را بدون اطلاعات حساس ارسال کنید:
+
+```text
+OS:
+RAM / CPU:
+alirezapanel version:
+Command used:
+alirezapanel check output:
+Relevant journalctl output:
+```
+
+---
+
+# 📜 لایسنس
+
+کد Integration پروژه تحت:
+
+```text
+GPL-3.0-or-later
+```
+
+منتشر می‌شود.
+
+باینری‌ها و پروژه‌های upstream لایسنس‌های مستقل خود را دارند و attribution آن‌ها حفظ می‌شود.
 
 ---
 
 <div align="center">
 
-### 🔥 alirezapanel
+## 🔥 alirezapanel
 
-**مدیریت VPN + DNS، یکپارچه‌شده بدون پنهان کردن ابزارهای upstream.**
+**One panel. VPN. DNS. Nodes. Real client usage. Professional subscription management.**
+
+### نصب سریع
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/alirezachatgpt97-coder/alirezapanel/main/install.sh)
+```
+
+⭐ اگر پروژه برایتان مفید بود، Repository را Star کنید.
 
 </div>
