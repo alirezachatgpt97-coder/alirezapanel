@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alirezapanel 1.5.0 -- one-file ONLINE installer, 2026-09-17
+# alirezapanel 2.6.0 -- one-file ONLINE installer, 2026-09-17
 # Debian 12/13 or Ubuntu 24.04, x86_64, systemd, fresh server.
 # No build toolchain, Docker, Node.js, or npm is installed on the target.
 # Upstream executables and their full interfaces are retained; a small gateway
@@ -533,7 +533,7 @@ class Gateway:
         # The stylesheet loads after the upstream styles. Mark the document before
         # first paint; don't override saved user theme choices on every visit.
         tag = ('<link rel="stylesheet" href="' + html.escape(base, quote=True) +
-               '_alireza/theme.css?v=1.5.0"><script>document.documentElement.setAttribute("data-alireza-theme","ember");'
+               '_alireza/theme.css?v=2.4.0"><script>document.documentElement.setAttribute("data-alireza-theme","ember");'
                'window.ALIREZA=' + opts + ';</script><script defer src="' +
                html.escape(base, quote=True) + '_alireza/brand.js?v=1.1.0"></script>')
         if not agh:
@@ -541,7 +541,7 @@ class Gateway:
         if not agh:
             tag += '<script defer src="' + html.escape(base, quote=True) + '_alireza/features.js?v=1.4.0"></script>'
         if not agh:
-            tag += '<script defer src="' + html.escape(base, quote=True) + '_alireza/insights.js?v=1.5.0"></script>'
+            tag += '<script defer src="' + html.escape(base, quote=True) + '_alireza/insights.js?v=2.0.0"></script>'
         return re.sub(r"</head\s*>", tag + "</head>", text, count=1, flags=re.I)
 
     def dns_shell(self, upstream_html, base, managed=False):
@@ -568,7 +568,7 @@ class Gateway:
   <div id="alireza-dns-clients" dir="rtl"></div>
   <iframe id="alireza-dns" title="alirezapanel DNS · تنظیمات پیشرفته" data-src="''' + src + '''" hidden style="width:100%;min-height:480px;border:0" allow="clipboard-write"></iframe>
   </main></div></div>''' + "\n".join(scripts) + '''
-<script>const app=new Vue({el:'#app',data:{themeSwitcher}});</script><script defer src="''' + html.escape(base, quote=True) + '''_alireza/dns-clients.js?v=1.3.0"></script></body>'''
+<script>const app=new Vue({el:'#app',data:{themeSwitcher}});</script><script defer src="''' + html.escape(base, quote=True) + '''_alireza/dns-clients.js?v=2.6.0"></script></body>'''
         if not managed:
             body = body.replace('<div id="alireza-dns-clients" dir="rtl"></div>', '')
             body = body.replace('data-src="', 'src="').replace(' hidden style="', ' style="')
@@ -936,6 +936,25 @@ def init():
     save(ETC / 'gateway.json', cfg, 0o640)
 
 
+def reset_password(password=None):
+    import bcrypt
+    if password is None:
+        first = getpass.getpass('New admin password (16..72 UTF-8 bytes): ')
+        second = getpass.getpass('Repeat password: ')
+        if first != second: raise SystemExit('Passwords do not match.')
+        password = first
+    if not 16 <= len(password.encode()) <= 72:
+        raise SystemExit('Password must contain 16..72 UTF-8 bytes.')
+    with closing(sqlite3.connect(ROOT / 'vpn/vpn-ui.db')) as db, db:
+        row = db.execute('SELECT id,username FROM users ORDER BY id LIMIT 1').fetchone()
+        if not row: raise SystemExit('Administrator row was not found.')
+        db.execute('UPDATE users SET password=? WHERE id=?',(bcrypt.hashpw(password.encode(),bcrypt.gensalt()).decode(),row[0]))
+    access=json.loads((ETC/'access.json').read_text())
+    access['username']=row[1]; access['password']=password
+    save(ETC/'access.json',access)
+    print('Administrator password updated.')
+
+
 def seed_vpn():
     import bcrypt
     access = json.loads((ETC / 'access.json').read_text())
@@ -1071,6 +1090,7 @@ if __name__ == '__main__':
     elif command == 'info': info()
     elif command == 'check': check('--login' in sys.argv)
     elif command == 'probe': probe()
+    elif command == 'reset-password': reset_password(sys.argv[2] if len(sys.argv) > 2 else None)
     else: raise SystemExit('Unknown helper command')
 ALIREZAPANEL_EMBEDDED_1_EOF
 
@@ -1174,10 +1194,10 @@ cat > "$STAGE/theme.css" <<'ALIREZAPANEL_EMBEDDED_3_EOF'
 html[data-alireza-theme="ember"],
 html[data-alireza-theme="ember"] body,
 html[data-alireza-theme="ember"][data-theme="ultra-dark"] body.dark {
-  --ap-bg:#0e0e11; --ap-surface:#18181c; --ap-raised:#212126;
-  --ap-border:#303037; --ap-text:#f5f2ef; --ap-muted:#b7b2ad;
-  --ap-orange:#ff963f; --ap-orange-hover:#ffb170; --ap-orange-soft:#35271e;
-  --ap-on-orange:#211208; --ap-ring:rgba(255,150,63,.25);
+  --ap-bg:#080b12; --ap-surface:#0f1420; --ap-raised:#171e2d;
+  --ap-border:#273248; --ap-text:#f4f7ff; --ap-muted:#9da9bd;
+  --ap-orange:#59d7ff; --ap-orange-hover:#8be5ff; --ap-orange-soft:#102d3d;
+  --ap-on-orange:#03131b; --ap-ring:rgba(89,215,255,.24);
   --bg:var(--ap-bg); --surface:var(--ap-surface); --surface-2:var(--ap-raised);
   --border:var(--ap-border); --border-strong:#49413a;
   --text:var(--ap-text); --text-2:var(--ap-muted); --text-3:#a9a39d;
@@ -1289,6 +1309,13 @@ html[data-alireza-theme="ember"] #app.login-app .lgt-brand { letter-spacing:-.5p
 html[data-alireza-theme="ember"] #app.login-app .lgt-submit {
   background:var(--ap-orange); color:var(--ap-on-orange); border-radius:10px; font-weight:700;
 }
+
+/* 2.0: Nova-inspired compact interactions; no continuous animation. */
+html[data-alireza-theme="ember"] :is(.ant-btn,.bo-rail-item,.bo-tile,.ant-card,.ap-dns button,.alireza-policy-button,.alireza-user-logs){transition:transform .14s ease,border-color .14s ease,background-color .14s ease,box-shadow .14s ease,color .14s ease}
+html[data-alireza-theme="ember"] :is(.ant-btn,.ap-dns button,.alireza-policy-button,.alireza-user-logs):not(:disabled):active{transform:translateY(1px) scale(.985)}
+html[data-alireza-theme="ember"] :is(.ant-btn-primary,.ap-primary):not(:disabled):hover{box-shadow:0 0 0 3px var(--ap-ring),0 8px 24px rgba(0,0,0,.16);transform:translateY(-1px)}
+html[data-alireza-theme="ember"] :is(.bo-tile,.ant-card):hover{transform:translateY(-1px);box-shadow:0 10px 30px rgba(0,0,0,.16)}
+@media(prefers-reduced-motion:reduce){html[data-alireza-theme="ember"] *{transition:none!important;animation:none!important}}
 
 /* Forms, dialogs and tables are deliberately scoped to native components. */
 html[data-alireza-theme="ember"] :is(.ant-input,.ant-input-number,.ant-select-selection,.ant-select-dropdown,
@@ -1465,6 +1492,15 @@ html[data-alireza-theme="ember"] #alireza-dns { background:var(--ap-bg); height:
 .alireza-log-dialog th,.alireza-log-dialog td{padding:10px 12px;border-bottom:1px solid var(--ap-border);text-align:start;white-space:nowrap;max-width:340px;overflow:hidden;text-overflow:ellipsis}
 .alireza-log-dialog th{position:sticky;top:0;background:var(--ap-bg)}
 .alireza-log-dialog>p:last-child{font-size:12px;color:var(--ap-muted)}
+
+/* 2.4 compact Nova-inspired polish: CSS-only, zero runtime polling. */
+:root{--ap-radius:14px;--ap-glow:0 10px 34px rgba(39,180,255,.08)}
+.bo-content .ant-card,.bo-content .ant-table,.bo-content .ant-modal-content{border-radius:var(--ap-radius)!important;box-shadow:var(--ap-glow)!important}
+.bo-content .ant-btn{transition:transform .14s ease,box-shadow .14s ease,border-color .14s ease}
+.bo-content .ant-btn:hover{transform:translateY(-1px);box-shadow:0 7px 22px rgba(49,190,255,.12)}
+.ap-dns-quick{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:10px 0 16px;padding:10px;border:1px solid var(--ap-border,#273248);border-radius:12px;background:rgba(30,90,130,.06)}
+.ap-dns-quick>span{font-size:12px;opacity:.72;margin-inline-end:3px}
+@media(prefers-reduced-motion:reduce){.bo-content .ant-btn{transition:none!important}.bo-content .ant-btn:hover{transform:none!important}}
 ALIREZAPANEL_EMBEDDED_3_EOF
 
 cat > "$STAGE/logo.svg" <<'ALIREZAPANEL_EMBEDDED_4_EOF'
@@ -2909,15 +2945,35 @@ class Nodes:
             data=json.loads(await bounded(response))
             if response.status!=200 or data.get('success') is not True:
                 raise web.HTTPBadGateway(text='Unable to list node inbounds.')
-        clients={}
+        clients={}; subscriptions={}
         for inbound in data.get('obj') or []:
             settings=inbound.get('settings') or '{}'
-            settings=json.loads(settings) if isinstance(settings,str) else settings
-            for client in settings.get('clients') or []:
+            try:
+                settings=json.loads(settings) if isinstance(settings,str) else settings
+            except (TypeError,ValueError):
+                # One malformed/legacy inbound must not hide every other subscription.
+                continue
+            if not isinstance(settings,dict):
+                continue
+            protocol=str(inbound.get('protocol') or 'unknown').strip().lower()
+            label={'vless':'VLESS','vmess':'VMess','trojan':'Trojan','shadowsocks':'Shadowsocks',
+                   'hysteria':'Hysteria','hysteria2':'Hysteria2','anytls':'AnyTLS','tuic':'TUIC','naive':'Naive',
+                   'mtproto':'MTProto','ssh':'SSH','wg-c':'WireGuard','awg':'AmneziaWG','gre':'GRE','openvpn':'OpenVPN',
+                   'l2tp':'L2TP','pptp':'PPTP','openconnect':'OpenConnect','sstp':'SSTP','ikev2':'IKEv2',
+                   'wireguard':'WireGuard','socks':'SOCKS','http':'HTTP'}.get(protocol,protocol.upper())
+            raw_clients=settings.get('clients') or []
+            if not isinstance(raw_clients,list):
+                continue
+            for client in raw_clients:
+                if not isinstance(client,dict) or client.get('enable') is False:
+                    continue
                 sid=client.get('subId') or client.get('subID')
-                if sid and re.fullmatch(r'[A-Za-z0-9_-]{1,200}',sid):
+                if sid and re.fullmatch(r'[A-Za-z0-9_-]{1,200}',str(sid)):
+                    sid=str(sid)
                     clients[sid]={'id':sid,'name':client.get('email') or sid}
-        return {'clients':list(clients.values()),'inbounds':len(data.get('obj') or [])}
+                    item=subscriptions.setdefault(sid,{'protocols':{},'email':client.get('email') or sid})
+                    item['protocols'][label]=item['protocols'].get(label,0)+1
+        return {'clients':list(clients.values()),'inbounds':len(data.get('obj') or []),'subscriptions':subscriptions}
 
     async def info(self, host):
         base,_,_=self.g.vpn_settings()
@@ -3198,7 +3254,7 @@ class Nodes:
         browser = ('text/html' in request.headers.get('Accept','') or request.query.get('html') == '1')
         if not request.path.startswith(AGENT) and kind in ('links','page') and not suffix and browser and request.query.get('raw') != '1':
             from subscriber import page, counters, exports, HEADERS
-            _,headers,_=await self.sub_bytes('links',sid,request.host)
+            link_raw,headers,_=await self.sub_bytes('links',sid,request.host)
             root=NATIVE_SUB+'links/'+sid
             downloads=[]
             try:
@@ -3208,11 +3264,29 @@ class Nodes:
                 pass  # Link formats remain available when optional file export discovery fails.
             links=[(label,NATIVE_SUB+k+'/'+sid+'?raw=1') for k,label in (
                 ('links','V2Ray / Base64'),('json','Xray JSON'),('clash','Clash / Mihomo'))]
-            return web.Response(text=page('اشتراک شما',[('مصرف اشتراک',counters(headers))],links,downloads),content_type='text/html',headers=HEADERS)
+            detected=inventory(link_raw,downloads)
+            direct=await self.direct_inventory({'node':'local','sub':sid},request.host)
+            for proto,count in direct.items(): detected[proto]=max(detected.get(proto,0),count)
+            return web.Response(text=page('اشتراک شما',[('مصرف اشتراک',counters(headers))],links,downloads,detected),content_type='text/html',headers=HEADERS)
         raw,headers,_=await self.sub_bytes(kind,sid,request.host,suffix)
         headers.popall('Set-Cookie',None); headers['Cache-Control']='no-store'
         headers['Referrer-Policy']='no-referrer'; headers['X-Robots-Tag']='noindex, nofollow'
         return web.Response(body=raw,headers=headers)
+
+    async def direct_inventory(self, source, host):
+        """Inventory every enabled subId membership; delivery itself stays on vpn-ui v1.9.4 native generators."""
+        try:
+            if source['node']=='local':
+                catalog=await self.local_data(host)
+            else:
+                node=self.state['nodes'].get(source['node'])
+                if not node: return {}
+                catalog=await self.remote_data(node,'catalog')
+            item=(catalog.get('subscriptions') or {}).get(source['sub']) or {}
+            value=item.get('protocols') or {}
+            return {str(k):int(v) for k,v in value.items() if type(v) is int and v>0}
+        except (web.HTTPException,aiohttp.ClientError,asyncio.TimeoutError,ValueError,KeyError,TypeError):
+            return {}
 
     async def source_bytes(self, source, kind, host, suffix=''):
         if source['node']=='local': return await self.sub_bytes(kind,source['sub'],host,suffix)
@@ -3237,26 +3311,31 @@ class Nodes:
         if len(parts)==1 and 'text/html' in request.headers.get('Accept','') and request.query.get('raw') != '1':
             from subscriber import page, counters, exports, HEADERS
             root=PUBLIC+parts[0]
-            sources=[]; downloads=[]
+            sources=[]; downloads=[]; protocol_counts={}
             async def describe(index,source):
                 name=self.source_name(source)
                 try:
-                    _,headers,_=await self.source_bytes(source,'links',request.host)
+                    link_raw,headers,_=await self.source_bytes(source,'links',request.host)
                 except (web.HTTPException,aiohttp.ClientError,asyncio.TimeoutError):
-                    return (name,{},'این منبع اکنون در دسترس نیست؛ آمار نامشخص است.'),[]
+                    return (name,{},'این منبع اکنون در دسترس نیست؛ آمار نامشخص است.'),[],{}
                 files=[]
                 try:
                     native,_,_=await self.source_bytes(source,'page',request.host)
                     files=[(name+' · '+label,url) for label,url in exports(native,root+'/source/'+str(index)+'/links')]
                 except (web.HTTPException,aiohttp.ClientError,asyncio.TimeoutError):
                     pass
-                return (name,counters(headers)),files
+                detected=inventory(link_raw,files)
+                direct=await self.direct_inventory(source,request.host)
+                for proto,count in direct.items(): detected[proto]=max(detected.get(proto,0),count)
+                return (name,counters(headers)),files,detected
             for start in range(0,len(profile['sources']),4):
                 batch=await asyncio.gather(*(describe(i,profile['sources'][i]) for i in range(start,min(start+4,len(profile['sources'])))))
-                for stats,files in batch: sources.append(stats); downloads.extend(files)
+                for stats,files,detected in batch:
+                    sources.append(stats); downloads.extend(files)
+                    for proto,count in detected.items(): protocol_counts[proto]=protocol_counts.get(proto,0)+count
             links=[(label,root+'/'+k) for k,label in (
                 ('links','V2Ray / Base64'),('json','Xray JSON'),('clash','Clash / Mihomo'))]
-            return web.Response(text=page(profile['name'],sources,links,downloads),content_type='text/html',headers=HEADERS)
+            return web.Response(text=page(profile['name'],sources,links,downloads,protocol_counts),content_type='text/html',headers=HEADERS)
         if kind=='source':
             if len(parts) not in (4,6) or not parts[2].isdigit() or int(parts[2])>=len(profile['sources']) or parts[3] not in ('links','json','clash'): raise web.HTTPNotFound()
             suffix='/'.join(parts[4:]) if len(parts)==6 else ''
@@ -3288,7 +3367,16 @@ def merge_subscriptions(kind, bodies, names):
         for raw in bodies:
             text=raw.decode().strip()
             if text and '://' not in text:
-                text=base64.b64decode(text + '=' * (-len(text) % 4),validate=True).decode()
+                compact=''.join(text.split()); padded=compact + '=' * (-len(compact) % 4)
+                decoded=None
+                for decoder in (base64.b64decode,base64.urlsafe_b64decode):
+                    try:
+                        candidate=decoder(padded.encode()).decode()
+                        if '://' in candidate: decoded=candidate; break
+                    except (ValueError,UnicodeDecodeError,base64.binascii.Error):
+                        pass
+                if decoded is None: raise ValueError('A source did not return a decodable native URI subscription.')
+                text=decoded
             lines=[s.strip() for s in text.splitlines() if s.strip()]
             if any('://' not in s for s in lines): raise ValueError('A source did not return a native URI subscription.')
             links.extend(lines)
@@ -3501,6 +3589,7 @@ cat > "$STAGE/subscriber.py" <<'NODE_EMBEDDED_SUBSCRIBER_PY_EOF'
 import datetime
 import html
 import re
+import base64
 from html.parser import HTMLParser
 from urllib.parse import urlsplit, unquote
 
@@ -3540,6 +3629,39 @@ def exports(raw, root):
     parser = ConfigLinks(); parser.feed(raw.decode('utf-8', errors='replace'))
     return [(name, root+'/configs/'+key) for key,name in parser.links]
 
+def _decode_links(raw):
+    """Decode a native URI subscription defensively without changing its payload."""
+    if not raw: return []
+    text = raw.decode('utf-8', errors='strict').strip()
+    if text and '://' not in text:
+        compact = ''.join(text.split())
+        padded = compact + '=' * (-len(compact) % 4)
+        decoded = None
+        for decoder in (base64.b64decode, base64.urlsafe_b64decode):
+            try:
+                decoded = decoder(padded.encode()).decode('utf-8')
+                if '://' in decoded: break
+            except (ValueError, UnicodeDecodeError, base64.binascii.Error):
+                decoded = None
+        if decoded is not None: text = decoded
+    return [line.strip() for line in text.splitlines() if '://' in line]
+
+def inventory(raw_links=b'', downloads=()):
+    """Return only detected, actually-published protocol counts; never synthesize configs."""
+    counts = {}
+    aliases = {'ss':'Shadowsocks','ssr':'ShadowsocksR','vmess':'VMess','vless':'VLESS','trojan':'Trojan',
+               'hysteria':'Hysteria','hysteria2':'Hysteria2','hy2':'Hysteria2','tuic':'TUIC','socks':'SOCKS',
+               'http':'HTTP','https':'HTTPS','ssh':'SSH','mieru':'Mieru','anytls':'AnyTLS'}
+    for link in _decode_links(raw_links):
+        scheme = urlsplit(link).scheme.lower()
+        label = aliases.get(scheme, scheme.upper() if scheme else 'Link')
+        counts[label] = counts.get(label,0) + 1
+    for name,_ in downloads:
+        low=name.lower()
+        label = next((label for needle,label in (('amnezia','AmneziaWG'),('wireguard','WireGuard'),('openvpn','OpenVPN'),('sing-box','sing-box'),('clash','Clash')) if needle in low), 'Native file')
+        counts[label] = counts.get(label,0) + 1
+    return counts
+
 def stat_card(name, data, error=''):
     esc = html.escape
     if error: return '<section class="card"><h2>'+esc(name)+'</h2><p class="muted">'+esc(error)+'</p></section>'
@@ -3560,17 +3682,28 @@ def stat_card(name, data, error=''):
     rows = [('دانلود',amount(down)),('آپلود',amount(up)),('سقف حجم','نامحدود' if total == 0 else amount(total)),('باقی‌مانده','نامحدود' if total == 0 else amount(remaining)),('انقضا',date)]
     ring = f'<svg viewBox="0 0 120 120" role="img" aria-label="درصد حجم مصرف‌شده {esc(percent_text)}"><circle class="track" cx="60" cy="60" r="50"/><circle class="fill" cx="60" cy="60" r="50" pathLength="100" stroke-dasharray="{percent or 0:.2f} 100"/></svg>'
     ratio = down/used*100 if used and down is not None else 0
-    return '<section class="card"><div class="card-head"><h2>'+esc(name)+'</h2><span class="pill">'+state+'</span></div><div class="usage"><div class="ring">'+ring+'<strong>'+percent_text+'</strong></div><div><p class="muted">حجم مصرف‌شده</p><div class="big" dir="ltr">'+amount(used)+'</div><p class="muted">دانلود + آپلود</p></div></div><div class="split" role="img" aria-label="سهم دانلود از مصرف"><span style="width:'+f'{ratio:.2f}'+'%"></span></div><dl>'+''.join('<div><dt>'+k+'</dt><dd dir="auto">'+esc(v)+'</dd></div>' for k,v in rows)+'</dl></section>'
+    remain_ratio = max(0,100-(percent or 0)) if total else 100
+    remain_chart = '<div class="chart-label"><span>باقی‌مانده</span><strong>'+('نامحدود' if total == 0 else amount(remaining))+'</strong></div><div class="remain" role="img" aria-label="درصد حجم باقی‌مانده"><span style="width:'+f'{remain_ratio:.2f}'+'%"></span></div>'
+    metrics = '<div class="metrics"><div><small>دانلود</small><strong dir="ltr">'+amount(down)+'</strong></div><div><small>آپلود</small><strong dir="ltr">'+amount(up)+'</strong></div><div><small>باقی‌مانده</small><strong dir="ltr">'+('∞' if total == 0 else amount(remaining))+'</strong></div></div>'
+    return '<section class="card"><div class="card-head"><h2>'+esc(name)+'</h2><span class="pill">'+state+'</span></div><div class="usage"><div class="ring">'+ring+'<strong>'+percent_text+'</strong></div><div><p class="muted">حجم مصرف‌شده</p><div class="big" dir="ltr">'+amount(used)+'</div><p class="muted">دانلود + آپلود</p></div></div>'+metrics+'<div class="chart-label"><span>نسبت دانلود به کل مصرف</span><strong>'+f'{ratio:.0f}%'+ '</strong></div><div class="split" role="img" aria-label="سهم دانلود از مصرف"><span style="width:'+f'{ratio:.2f}'+'%"></span></div>'+remain_chart+'<dl>'+''.join('<div><dt>'+k+'</dt><dd dir="auto">'+esc(v)+'</dd></div>' for k,v in rows)+'</dl></section>'
 
-def page(title, sources, links, downloads=()):
+def page(title, sources, links, downloads=(), protocols=None):
     esc = html.escape
     cards = ''.join(stat_card(*s) for s in sources)
-    actions = ''.join('<div class="link-row"><div><strong>'+esc(name)+'</strong><a dir="ltr" href="'+esc(url,quote=True)+'">'+esc(url)+'</a></div><button type="button" data-copy="'+esc(url,quote=True)+'">کپی لینک</button><a class="download" href="'+esc(url,quote=True)+'">دریافت</a></div>' for name,url in links)
-    files = ''.join('<a class="file" href="'+esc(url,quote=True)+'" download="'+esc(name,quote=True)+'">↓ '+esc(name)+'</a>' for name,url in downloads)
+    protocols = protocols or {}
+    protocol_cards = ''.join('<div class="protocol-card"><span>'+esc(name)+'</span><strong dir="ltr">'+str(count)+'</strong></div>' for name,count in sorted(protocols.items()))
+    inventory_html = '<section class="links inventory"><div class="section-head"><div><h2>Inventory پروتکل‌ها</h2><p class="muted">ترکیب خروجی واقعی Subscription و همه عضویت‌های مستقیم inbound برای همین شناسه. تولید لینک و فایل به موتور بومی vpn-ui سپرده می‌شود تا Reality/WireGuard و transportها با پارامتر واقعی خودشان صادر شوند.</p></div><span class="pill">'+str(sum(protocols.values()))+' config</span></div><div class="protocol-grid">'+protocol_cards+'</div></section>' if protocols else ''
+    actions = ''.join('<div class="link-row"><div><strong>'+esc(name)+'</strong><a dir="ltr" href="'+esc(url,quote=True)+'">'+esc(url)+'</a></div><button type="button" data-copy="'+esc(url,quote=True)+'">کپی مستقیم</button></div>' for name,url in links)
+    def proto(name):
+        low=name.lower()
+        for needle,label in (('amnezia','AmneziaWG'),('wireguard','WireGuard'),('openvpn','OpenVPN'),('clash','Clash'),('sing-box','sing-box'),('vless','VLESS'),('vmess','VMess'),('trojan','Trojan'),('shadow','Shadowsocks')):
+            if needle in low: return label
+        return 'Native'
+    files = ''.join('<div class="native-file"><div><span class="native-dot"></span><span><strong>'+esc(name)+'</strong><small class="proto">'+esc(proto(name))+'</small></span></div><div class="native-actions"><button type="button" class="ghost" data-copy="'+esc(url,quote=True)+'">کپی لینک</button><a class="file" href="'+esc(url,quote=True)+'" download="'+esc(name,quote=True)+'">دریافت فایل</a></div></div>' for name,url in downloads)
     return '''<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>'''+esc(title)+''' · alirezapanel</title><style>
-:root{color-scheme:dark;--bg:#101115;--surface:#1a1c22;--line:#30323c;--muted:#a9acb8;--accent:#f4a064}*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 90% 0,#3b281d66,transparent 50%),var(--bg);color:#f6f2ef;font:15px/1.8 system-ui,sans-serif}main{max-width:1050px;margin:auto;padding:36px 24px 60px}header{display:flex;justify-content:space-between;gap:20px;align-items:center;border-bottom:1px solid var(--line);padding-bottom:22px}.brand{font-weight:700;letter-spacing:.5px;color:var(--accent)}.eyebrow{font-size:12px;color:var(--muted);margin:0}h1{font-size:clamp(24px,4vw,36px);margin:5px 0 0;overflow-wrap:anywhere}h2{font-size:17px;margin:0}.muted,dt{color:var(--muted)}.intro{margin:24px 0}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(310px,100%),1fr));gap:18px}.card,.links{background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:24px}.card-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.pill{font-size:11px;background:#f4a06415;color:var(--accent);padding:3px 10px;border-radius:20px}.usage{display:flex;align-items:center;gap:26px;margin:22px 0}.usage p{font-size:12px;margin:3px 0}.big{font-size:28px;font-weight:650;letter-spacing:-1px}.ring{position:relative;width:128px;height:128px;flex-shrink:0}.ring svg{width:100%;height:100%;transform:rotate(-90deg)}circle{fill:none;stroke-width:8}.track{stroke:#30333e}.fill{stroke:var(--accent);stroke-linecap:round}.ring strong{position:absolute;inset:0;display:grid;place-content:center;font-size:23px;direction:ltr}.split{height:6px;background:#849bec;border-radius:8px;overflow:hidden;direction:ltr}.split span{display:block;height:100%;background:var(--accent)}dl{margin-bottom:0}dl>div{display:flex;justify-content:space-between;gap:16px;padding:9px 0;border-bottom:1px solid #30323c80}dl>div:last-child{border:0}dd{margin:0;text-align:end;font-variant-numeric:tabular-nums}.links{margin-top:22px}.link-row{display:flex;gap:12px;align-items:center;padding:20px 0;border-bottom:1px solid var(--line)}.link-row:last-child{border:0}.link-row>div{flex:1;min-width:0}.link-row strong{display:block;font-size:14px}.link-row>div>a{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:var(--muted);max-width:100%}a{color:var(--accent);text-decoration:none}button,.download,.file{font:inherit;font-size:13px;border:1px solid #79523a;border-radius:10px;padding:8px 13px;background:transparent;color:var(--accent);cursor:pointer;white-space:nowrap}button{background:var(--accent);color:#23180f;font-weight:650}a:focus-visible,button:focus-visible{outline:2px solid #c8d4ff;outline-offset:4px}.file{display:inline-block;margin:12px 0 0 8px;white-space:normal;overflow-wrap:anywhere}footer{margin-top:24px;font-size:12px;color:var(--muted)}#feedback{min-height:24px;color:var(--accent)}@media(max-width:540px){main{padding:22px 14px}.card,.links{padding:18px}.link-row{flex-wrap:wrap}.link-row>div{flex-basis:100%}.usage{gap:18px}.big{font-size:25px}header{align-items:start;flex-direction:column;gap:10px}}@media(prefers-color-scheme:light){:root{color-scheme:light;--bg:#f6f3ef;--surface:#fff;--line:#e4dfd8;--muted:#686672;--accent:#a4541c}body{color:#28252c}.track{stroke:#ebe5df}.fill{stroke:#da8445}button{background:#f0a86d}.pill{background:#a4541c10}}
-</style></head><body><main><header><div><p class="eyebrow">اشتراک شخصی</p><h1>'''+esc(title)+'''</h1></div><span class="brand" dir="ltr">alirezapanel</span></header><p class="intro muted">جزئیات مصرف و لینک‌های اتصال شما، در یک نگاه.</p><div class="cards">'''+cards+'''</div><section class="links"><h2>اتصال و دریافت کانفیگ</h2><p class="muted">لینک متناسب با برنامهٔ خود را کپی و به اشتراک‌های برنامه اضافه کنید.</p>'''+actions+files+'''<p id="feedback" role="status" aria-live="polite"></p></section><footer>این لینک خصوصی است؛ آن را فقط در اختیار صاحب اشتراک قرار دهید.<br>نمودارها مصرف تجمیعی فعلی سرور را نشان می‌دهند؛ آمار با بازکردن دوبارهٔ صفحه تازه می‌شود. سهمیهٔ هر منبع مستقل است.</footer></main><script>
-document.addEventListener('click',async function(e){const b=e.target.closest('[data-copy]');if(!b)return;const url=new URL(b.dataset.copy,location.href).href;const out=document.getElementById('feedback');try{if(navigator.clipboard&&isSecureContext)await navigator.clipboard.writeText(url);else{const t=document.createElement('textarea');t.value=url;document.body.append(t);t.select();const ok=document.execCommand('copy');t.remove();if(!ok)throw Error();}out.textContent='لینک کپی شد.';}catch(_){out.textContent='کپی خودکار ممکن نشد؛ لینک دریافت را نگه دارید و کپی کنید.';}});
+:root{color-scheme:dark;--bg:#080b12;--surface:#0f1420;--line:#273248;--muted:#9da9bd;--accent:#59d7ff}*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 90% 0,#14344f88,transparent 46%),radial-gradient(ellipse at 10% 0,#251f5266,transparent 40%),var(--bg);color:#f6f2ef;font:15px/1.8 system-ui,sans-serif}main{max-width:1050px;margin:auto;padding:36px 24px 60px}header{display:flex;justify-content:space-between;gap:20px;align-items:center;border-bottom:1px solid var(--line);padding-bottom:22px}.brand{font-weight:700;letter-spacing:.5px;color:var(--accent)}.eyebrow{font-size:12px;color:var(--muted);margin:0}h1{font-size:clamp(24px,4vw,36px);margin:5px 0 0;overflow-wrap:anywhere}h2{font-size:17px;margin:0}.muted,dt{color:var(--muted)}.intro{margin:24px 0}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(310px,100%),1fr));gap:18px}.card,.links{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:22px}.card-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.pill{font-size:11px;background:#59d7ff15;color:var(--accent);padding:3px 10px;border-radius:20px}.usage{display:flex;align-items:center;gap:26px;margin:22px 0}.usage p{font-size:12px;margin:3px 0}.big{font-size:28px;font-weight:650;letter-spacing:-1px}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0}.metrics>div{padding:10px;border:1px solid var(--line);border-radius:12px;background:#080b1266;min-width:0}.metrics small{display:block;color:var(--muted);font-size:10px}.metrics strong{display:block;overflow:hidden;text-overflow:ellipsis;font-size:12px}.ring{position:relative;width:128px;height:128px;flex-shrink:0}.ring svg{width:100%;height:100%;transform:rotate(-90deg)}circle{fill:none;stroke-width:8}.track{stroke:#30333e}.fill{stroke:var(--accent);stroke-linecap:round}.ring strong{position:absolute;inset:0;display:grid;place-content:center;font-size:23px;direction:ltr}.split{height:6px;background:#849bec;border-radius:8px;overflow:hidden;direction:ltr}.split span{display:block;height:100%;background:linear-gradient(90deg,var(--accent),#6ca8ff)}.chart-label{display:flex;justify-content:space-between;gap:12px;margin-top:14px;font-size:11px;color:var(--muted)}.chart-label strong{color:#f6f2ef}.remain{height:6px;margin-top:6px;background:#252b38;border-radius:8px;overflow:hidden;direction:ltr}.remain span{display:block;height:100%;background:linear-gradient(90deg,#6ca8ff,var(--accent))}dl{margin-bottom:0}dl>div{display:flex;justify-content:space-between;gap:16px;padding:9px 0;border-bottom:1px solid #30323c80}dl>div:last-child{border:0}dd{margin:0;text-align:end;font-variant-numeric:tabular-nums}.links{margin-top:22px}.section-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}.section-head p{margin:5px 0 0}.protocol-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:9px;margin-top:16px}.protocol-card{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--line);background:#080b1266;border-radius:12px;padding:11px 12px}.protocol-card span{font-size:12px;color:var(--muted)}.protocol-card strong{font-size:17px;color:var(--accent)}.link-row{display:flex;gap:12px;align-items:center;padding:20px 0;border-bottom:1px solid var(--line)}.link-row:last-child{border:0}.link-row>div{flex:1;min-width:0}.link-row strong{display:block;font-size:14px}.link-row>div>a{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:var(--muted);max-width:100%}a{color:var(--accent);text-decoration:none}button,.download,.file{font:inherit;font-size:13px;border:1px solid #35506a;border-radius:10px;padding:8px 13px;background:transparent;color:var(--accent);cursor:pointer;white-space:nowrap}button{background:var(--accent);color:#03131b;font-weight:650}a:focus-visible,button:focus-visible{outline:2px solid #c8d4ff;outline-offset:4px}.file{display:inline-block;margin:0;white-space:normal;overflow-wrap:anywhere}.native-file{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid var(--line)}.native-file>div{min-width:0;display:flex;align-items:center;gap:8px}.native-file strong{overflow-wrap:anywhere}.proto{display:inline-block;margin-inline-start:8px;color:var(--muted);font-size:10px;border:1px solid var(--line);border-radius:999px;padding:0 7px}.native-actions{display:flex;gap:7px;align-items:center}.ghost{background:transparent;color:var(--accent);font-weight:500}.native-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent);flex:none}footer{margin-top:24px;font-size:12px;color:var(--muted)}#feedback{min-height:24px;color:var(--accent)}@media(max-width:540px){main{padding:22px 14px}.card,.links{padding:18px}.link-row{flex-wrap:wrap}.link-row>div{flex-basis:100%}.usage{gap:18px}.big{font-size:25px}.metrics{grid-template-columns:1fr}.native-file{align-items:flex-start;flex-direction:column}.native-actions{width:100%;flex-wrap:wrap}header{align-items:start;flex-direction:column;gap:10px}}@media(prefers-color-scheme:light){:root{color-scheme:light;--bg:#f6f3ef;--surface:#fff;--line:#e4dfd8;--muted:#686672;--accent:#a4541c}body{color:#28252c}.track{stroke:#ebe5df}.fill{stroke:#da8445}button{background:#f0a86d}.pill{background:#a4541c10}}
+</style></head><body><main><header><div><p class="eyebrow">اشتراک شخصی</p><h1>'''+esc(title)+'''</h1></div><span class="brand" dir="ltr">alirezapanel</span></header><p class="intro muted">حجم، انقضا و همه مسیرهای اتصال در یک نگاه؛ لینک اشتراک با یک لمس مستقیماً کپی می‌شود.</p><div class="cards">'''+cards+'''</div>'''+inventory_html+'''<section class="links"><h2>لینک اشتراک و کانفیگ‌ها</h2><p class="muted">فرمت مناسب برنامه را مستقیم کپی کنید. فایل‌های مستقل WireGuard/OpenVPN/AmneziaWG و سایر خروجی‌های بومی، در صورت فعال بودن پروتکل، پایین همین بخش نمایش داده می‌شوند.</p>'''+actions+files+'''<p id="feedback" role="status" aria-live="polite"></p></section><footer>این لینک خصوصی است؛ آن را فقط در اختیار صاحب اشتراک قرار دهید.<br>نمودارها مصرف تجمیعی فعلی سرور را نشان می‌دهند؛ آمار با بازکردن دوبارهٔ صفحه تازه می‌شود. سهمیهٔ هر منبع مستقل است.</footer></main><script>
+document.addEventListener('click',async function(e){const b=e.target.closest('[data-copy]');if(!b)return;const url=new URL(b.dataset.copy,location.href).href;const out=document.getElementById('feedback');try{if(navigator.clipboard&&isSecureContext)await navigator.clipboard.writeText(url);else{const t=document.createElement('textarea');t.value=url;document.body.append(t);t.select();const ok=document.execCommand('copy');t.remove();if(!ok)throw Error();}out.textContent='✓ لینک مستقیماً کپی شد.';}catch(_){out.textContent='مرورگر اجازه کپی خودکار نداد؛ خود لینک را لمس و کپی کنید.';}});
 </script></body></html>'''
 NODE_EMBEDDED_SUBSCRIBER_PY_EOF
 
@@ -3798,8 +3931,12 @@ def upstreams(value):
 
 def client_config(data):
     name = data.get('name', '')
-    if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80 or any(ord(c) < 32 for c in name):
-        raise ValueError('نام کلاینت باید بین ۱ تا ۸۰ حرف باشد.')
+    # A display name is convenience, not identity. Quick-create may omit it;
+    # generate a short non-secret label so the operator is never blocked on naming.
+    if name is None: name = ''
+    if not isinstance(name, str) or len(name.strip()) > 80 or any(ord(c) < 32 for c in name):
+        raise ValueError('نام کلاینت باید حداکثر ۸۰ حرف باشد.')
+    name = name.strip() or ('DNS-' + secrets.token_hex(3).upper())
     mode = data.get('ip_mode', 'any')
     if mode not in ('any', 'fixed', 'first'):
         raise ValueError('حالت محدودیت IP نامعتبر است.')
@@ -3807,7 +3944,7 @@ def client_config(data):
     custom = data.get('resolver', 'default')
     if custom not in ('default', 'custom'):
         raise ValueError('نوع DNS نامعتبر است.')
-    out = dict(name=name.strip(), ip_mode=mode, allowed_ip=ip,
+    out = dict(name=name, ip_mode=mode, allowed_ip=ip,
                quota_bytes=number(data.get('quota_bytes', 0), maximum=10**15),
                query_limit=number(data.get('query_limit', 0)),
                days=number(data.get('days', 30), maximum=3650),
@@ -3922,13 +4059,16 @@ class DNSClients:
     def native(self, row, cfg):
         return dict(name='alireza-managed-' + row['id'], ids=[row['agh_id']], tags=[],
                     use_global_settings=False, filtering_enabled=cfg['ads'],
-                    parental_enabled=cfg['adult'], safebrowsing_enabled=True,
+                    parental_enabled=cfg['adult'], safebrowsing_enabled=bool(cfg['adult'] or cfg['safe_search']),
                     safe_search=dict(enabled=cfg['safe_search'], **{k: True for k in
                          ('bing','duckduckgo','ecosia','google','pixabay','yandex','youtube')}),
                     use_global_blocked_services=True, upstreams=cfg['upstreams'],
                     upstreams_cache_enabled=False, ignore_querylog=False, ignore_statistics=False)
 
     async def check_config(self, cfg):
+        # Quick modes are self-applying: validate custom resolvers, then reconcile
+        # only the AdGuard features the selected client actually needs. This is
+        # on-demand during Save, so there is no watcher/poller or idle RAM cost.
         if cfg['upstreams']:
             tested = await self.agh('test_upstream_dns', {'upstream_dns': cfg['upstreams']})
             if any(tested.get(u) != 'OK' for u in cfg['upstreams']):
@@ -3936,11 +4076,24 @@ class DNSClients:
         if cfg['ads'] or cfg['adult'] or cfg['safe_search']:
             status = await self.agh('status')
             if not status.get('protection_enabled'):
-                raise web.HTTPConflict(text='محافظت DNS خاموش است؛ در تنظیمات پیشرفته آن را روشن کن.')
+                await self.agh('protection', {'enable': True})
         if cfg['ads']:
             status = await self.agh('filtering/status')
-            if not status.get('enabled') or not any(f.get('enabled') and f.get('rules_count', 0) for f in status.get('filters', [])):
-                raise web.HTTPConflict(text='برای فیلتر تبلیغات، ابتدا یک فهرست مسدودسازی فعال و دانلودشده در تنظیمات پیشرفته DNS اضافه کن.')
+            if not status.get('enabled'):
+                await self.agh('filtering/config', {'enabled': True, 'interval': 24})
+                status = await self.agh('filtering/status')
+            usable = any(f.get('enabled') and f.get('rules_count', 0) for f in status.get('filters', []))
+            if not usable:
+                # Official AdGuard DNS filter. Add only when the operator selected
+                # ad blocking and no usable blocklist exists; never overwrite lists.
+                await self.agh('filtering/add_url', {
+                    'name': 'AdGuard DNS filter',
+                    'url': 'https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt',
+                    'whitelist': False})
+                status = await self.agh('filtering/status')
+                usable = any(f.get('enabled') and f.get('rules_count', 0) for f in status.get('filters', []))
+                if not usable:
+                    raise web.HTTPBadGateway(text='فهرست AdGuard اضافه شد اما هنوز آماده نیست؛ یک‌بار دیگر ذخیره را بزن.')
 
     async def save_client(self, data):
         cfg = client_config(data)
@@ -4281,8 +4434,9 @@ cat > "$STAGE/dns_clients.js" <<'NODE_EMBEDDED_DNS_CLIENTS_JS_EOF'
   function editor(existing){
     const initial={...defaults,...existing?.config},d=dialog(existing?'ویرایش کلاینت DNS':'کلاینت جدید DNS'),form=n('form');d.append(form);
     const plan=field(form,'شروع از پلن آماده','select');options(plan,[['','تنظیم دلخواه'],['trial','آزمایشی · ۱ روز'],['month','ماهانه · ۳۰ روز'],...state.plans.map(p=>[p.id,p.name])],'');
-    const grid=n('div',undefined,'ap-dns-form-grid');form.append(grid);
-    const name=field(grid,'نام کلاینت','text',initial.name);name.required=true;name.maxLength=80;
+    const quick=n('div',undefined,'ap-dns-quick');quick.append(n('span','حالت سریع:'));
+    const grid=n('div',undefined,'ap-dns-form-grid');form.append(quick,grid);
+    const name=field(grid,'نام کلاینت (اختیاری)','text',initial.name);name.required=false;name.maxLength=80;name.placeholder='خودکار ساخته می‌شود';
     const days=field(grid,'مدت پلن (روز؛ صفر = بدون انقضا)','number',initial.days);days.min=0;days.max=3650;days.required=true;
     const quota=field(grid,'حجم پیام‌های DNS (MiB؛ صفر = نامحدود)','number',initial.quota_bytes/1048576);quota.min=0;quota.max=1000000;quota.step='0.001';quota.required=true;
     const queries=field(grid,'سقف تعداد درخواست (صفر = نامحدود)','number',initial.query_limit);queries.min=0;queries.max=1e12;queries.required=true;
@@ -4312,6 +4466,13 @@ cat > "$STAGE/dns_clients.js" <<'NODE_EMBEDDED_DNS_CLIENTS_JS_EOF'
     }
     const dependencies=()=>{ip.parentElement.hidden=ipMode.value!=='fixed';ip.required=ipMode.value==='fixed';upstream.parentElement.hidden=resolver.value!=='custom';upstream.required=resolver.value==='custom';hint.hidden=resolver.value!=='custom';};
     ipMode.onchange=resolver.onchange=dependencies;dependencies();
+    const applyQuick=mode=>{plan.value='';resolver.value='default';upstream.value='';ipMode.value='any';ip.value='';
+      if(mode==='safe'){ads.checked=true;adult.checked=true;safe.checked=true;}
+      if(mode==='family'){ads.checked=true;adult.checked=true;safe.checked=true;}
+      if(mode==='clean'){ads.checked=true;adult.checked=false;safe.checked=false;}
+      if(mode==='plain'){ads.checked=false;adult.checked=false;safe.checked=false;}
+      dependencies();feedback.textContent='تنظیمات آماده شد؛ نام هم اختیاری است. «ساخت و دریافت اتصال» را بزن؛ تنظیمات لازم AdGuard خودکار اعمال می‌شود.';};
+    for(const [mode,label] of [['safe','محافظت کامل'],['family','خانواده'],['clean','ضد تبلیغ'],['plain','DNS ساده']]) quick.append(button(label,()=>applyQuick(mode),'ap-primary-soft'));
     plan.onchange=()=>{
       const preset=state.plans.find(p=>p.id===plan.value)?.config || (plan.value==='trial'?{...defaults,days:1,query_limit:10000}:plan.value==='month'?{...defaults,days:30}:null);if(!preset)return;
       if(!existing){days.value=preset.days;start.checked=preset.start_on_first;}
@@ -5211,8 +5372,31 @@ cat > /usr/local/bin/alirezapanel <<'CLI'
 #!/usr/bin/env bash
 set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo 'Run with sudo.' >&2; exit 1; }
+if [[ $# -eq 0 ]]; then
+    while true; do
+        clear 2>/dev/null || true
+        printf '%s\n' '╭──────────────────────────────────────╮' '│          alirezapanel 2.3            │' '├──────────────────────────────────────┤' '│ 1) URL + credentials                 │' '│ 2) Reset admin password              │' '│ 3) Health check                      │' '│ 4) Service status                    │' '│ 5) Safe restart                      │' '│ 6) Recent logs                       │' '│ 7) Backup now                        │' '│ 8) SSL manager                       │' '│ 9) Resource snapshot                 │' '│10) Paths + ports                     │' '│ 0) Exit                              │' '╰──────────────────────────────────────╯'
+        read -r -p 'Select: ' choice
+        case "$choice" in
+          1) python3 /opt/alirezapanel/gateway/manage.py info; /usr/local/bin/alirezapanel credentials ;;
+          2) python3 /opt/alirezapanel/gateway/manage.py reset-password ;;
+          3) /usr/local/bin/alirezapanel check ;;
+          4) /usr/local/bin/alirezapanel status ;;
+          5) /usr/local/bin/alirezapanel restart ;;
+          6) /usr/local/bin/alirezapanel logs ;;
+          7) /usr/local/bin/alirezapanel backup ;;
+          8) python3 /opt/alirezapanel/gateway/tls.py configure ;;
+          9) /usr/local/bin/alirezapanel resources ;;
+         10) /usr/local/bin/alirezapanel paths ;;
+          0) exit 0 ;;
+          *) echo 'Invalid selection.' ;;
+        esac
+        echo; read -r -p 'Press Enter to continue...' _
+    done
+fi
 case "${1:-info}" in
     ssl) shift; exec python3 /opt/alirezapanel/gateway/tls.py "${1:-configure}" ;;
+    password|passwd) shift; exec python3 /opt/alirezapanel/gateway/manage.py reset-password "${1:-}" ;;
     info) exec python3 /opt/alirezapanel/gateway/manage.py info ;;
     credentials) exec python3 -c 'import json; d=json.load(open("/etc/alirezapanel/access.json")); print("Initial username:",d["username"]); print("Initial password:",d["password"]); print("These are initial credentials; later password changes are not reflected here.")' ;;
     check) exec python3 /opt/alirezapanel/gateway/manage.py check ;;
@@ -5251,6 +5435,27 @@ case "${1:-info}" in
         python3 /opt/alirezapanel/gateway/manage.py info
         echo 'Restart completed successfully.'
         ;;
+    resources)
+        printf 'Memory: '; free -h | awk '/^Mem:/{print $3 " / " $2}'
+        printf 'Disk /: '; df -h / | awk 'NR==2{print $3 " / " $2 " (" $5 " used)"}'
+        printf 'Load: '; cut -d' ' -f1-3 /proc/loadavg
+        printf 'Services: '; for u in alirezapanel alirezapanel-vpn alirezapanel-dns; do printf '%s=%s ' "$u" "$(systemctl is-active "$u" 2>/dev/null || true)"; done; echo
+        ;;
+    paths)
+        python3 - <<'PYINFO'
+import json
+from pathlib import Path
+a=json.loads(Path('/etc/alirezapanel/access.json').read_text())
+g=json.loads(Path('/etc/alirezapanel/gateway.json').read_text())
+print('Panel host:',a.get('host'))
+print('Public port:',a.get('port'))
+print('Secret path:',a.get('base'))
+print('TLS mode:',g.get('tls_mode'))
+print('VPN UI: 127.0.0.1:18080')
+print('AdGuard UI: 127.0.0.1:18081')
+print('DNS: port 53 on configured bind address')
+PYINFO
+        ;;
     logs) exec journalctl -u alirezapanel -u alirezapanel-vpn -u alirezapanel-dns -n 100 --no-pager ;;
     backup)
         dest="/var/backups/alirezapanel/manual-$(date -u +%Y%m%dT%H%M%SZ)-$$"
@@ -5266,10 +5471,11 @@ case "${1:-info}" in
         ;;
     vpn) shift; cd /opt/alirezapanel/vpn; exec ./vpn-ui-amd64 "$@" ;;
     help|--help|-h) cat /opt/alirezapanel/README.txt ;;
-    *) echo 'Commands: ssl info credentials check status restart logs backup vpn help' >&2; exit 2 ;;
+    *) echo 'Commands: ssl info credentials password check status restart logs backup resources paths vpn help' >&2; exit 2 ;;
 esac
 CLI
 chmod 755 /usr/local/bin/alirezapanel
+ln -sf /usr/local/bin/alirezapanel /usr/local/bin/alireza
 
 # Adopt the issued certificate after installing all integration modules.
 python3 "$ROOT/gateway/tls.py" migrate
