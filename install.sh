@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alirezapanel 2.6.0 -- one-file ONLINE installer, 2026-09-17
+# alirezapanel 2.6.2.0 -- one-file ONLINE installer, 2026-09-17
 # Debian 12/13 or Ubuntu 24.04, x86_64, systemd, fresh server.
 # No build toolchain, Docker, Node.js, or npm is installed on the target.
 # Upstream executables and their full interfaces are retained; a small gateway
@@ -3253,7 +3253,7 @@ class Nodes:
         kind,sid=parts[:2]; suffix=parts[2] if len(parts)>2 else ''
         browser = ('text/html' in request.headers.get('Accept','') or request.query.get('html') == '1')
         if not request.path.startswith(AGENT) and kind in ('links','page') and not suffix and browser and request.query.get('raw') != '1':
-            from subscriber import page, counters, exports, HEADERS
+            from subscriber import page, counters, exports, inventory, HEADERS
             link_raw,headers,_=await self.sub_bytes('links',sid,request.host)
             root=NATIVE_SUB+'links/'+sid
             downloads=[]
@@ -3264,10 +3264,23 @@ class Nodes:
                 pass  # Link formats remain available when optional file export discovery fails.
             links=[(label,NATIVE_SUB+k+'/'+sid+'?raw=1') for k,label in (
                 ('links','V2Ray / Base64'),('json','Xray JSON'),('clash','Clash / Mihomo'))]
-            detected=inventory(link_raw,downloads)
+            # Landing-page enrichment is optional. Never let inventory/UI parsing turn a
+            # healthy native subscription into HTTP 500. The raw vpn-ui output stays
+            # authoritative and remains available through ?raw=1.
+            try:
+                detected=inventory(link_raw,downloads)
+            except Exception:
+                detected={}
             direct=await self.direct_inventory({'node':'local','sub':sid},request.host)
             for proto,count in direct.items(): detected[proto]=max(detected.get(proto,0),count)
-            return web.Response(text=page('اشتراک شما',[('مصرف اشتراک',counters(headers))],links,downloads,detected),content_type='text/html',headers=HEADERS)
+            try:
+                rendered=page('اشتراک شما',[('مصرف اشتراک',counters(headers))],links,downloads,detected)
+            except Exception:
+                # Minimal no-JS fallback still exposes the real subscription instead
+                # of returning a generic aiohttp 500 page.
+                raw_url=html.escape(NATIVE_SUB+'links/'+sid+'?raw=1',quote=True)
+                rendered='<!doctype html><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><title>Subscription</title><a href="'+raw_url+'">Open subscription</a>'
+            return web.Response(text=rendered,content_type='text/html',headers=HEADERS)
         raw,headers,_=await self.sub_bytes(kind,sid,request.host,suffix)
         headers.popall('Set-Cookie',None); headers['Cache-Control']='no-store'
         headers['Referrer-Policy']='no-referrer'; headers['X-Robots-Tag']='noindex, nofollow'
@@ -3309,7 +3322,7 @@ class Nodes:
         if not profile: raise web.HTTPNotFound()
         kind=parts[1] if len(parts)>1 else 'links'
         if len(parts)==1 and 'text/html' in request.headers.get('Accept','') and request.query.get('raw') != '1':
-            from subscriber import page, counters, exports, HEADERS
+            from subscriber import page, counters, exports, inventory, HEADERS
             root=PUBLIC+parts[0]
             sources=[]; downloads=[]; protocol_counts={}
             async def describe(index,source):
@@ -3632,7 +3645,7 @@ def exports(raw, root):
 def _decode_links(raw):
     """Decode a native URI subscription defensively without changing its payload."""
     if not raw: return []
-    text = raw.decode('utf-8', errors='strict').strip()
+    text = raw.decode('utf-8', errors='replace').strip()
     if text and '://' not in text:
         compact = ''.join(text.split())
         padded = compact + '=' * (-len(compact) % 4)
