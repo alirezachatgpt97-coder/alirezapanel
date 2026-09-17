@@ -3253,7 +3253,7 @@ class Nodes:
         kind,sid=parts[:2]; suffix=parts[2] if len(parts)>2 else ''
         browser = ('text/html' in request.headers.get('Accept','') or request.query.get('html') == '1')
         if not request.path.startswith(AGENT) and kind in ('links','page') and not suffix and browser and request.query.get('raw') != '1':
-            from subscriber import page, counters, exports, inventory, HEADERS
+            from subscriber import page, counters, exports, inventory, published_configs, HEADERS
             link_raw,headers,_=await self.sub_bytes('links',sid,request.host)
             root=NATIVE_SUB+'links/'+sid
             downloads=[]
@@ -3274,7 +3274,7 @@ class Nodes:
             direct=await self.direct_inventory({'node':'local','sub':sid},request.host)
             for proto,count in direct.items(): detected[proto]=max(detected.get(proto,0),count)
             try:
-                rendered=page('اشتراک شما',[('مصرف اشتراک',counters(headers))],links,downloads,detected)
+                rendered=page('اشتراک شما',[('مصرف اشتراک',counters(headers))],links,downloads,detected,published_configs(link_raw))
             except Exception:
                 # Minimal no-JS fallback still exposes the real subscription instead
                 # of returning a generic aiohttp 500 page.
@@ -3322,15 +3322,15 @@ class Nodes:
         if not profile: raise web.HTTPNotFound()
         kind=parts[1] if len(parts)>1 else 'links'
         if len(parts)==1 and 'text/html' in request.headers.get('Accept','') and request.query.get('raw') != '1':
-            from subscriber import page, counters, exports, inventory, HEADERS
+            from subscriber import page, counters, exports, inventory, published_configs, HEADERS
             root=PUBLIC+parts[0]
-            sources=[]; downloads=[]; protocol_counts={}
+            sources=[]; downloads=[]; protocol_counts={}; configs=[]
             async def describe(index,source):
                 name=self.source_name(source)
                 try:
                     link_raw,headers,_=await self.source_bytes(source,'links',request.host)
                 except (web.HTTPException,aiohttp.ClientError,asyncio.TimeoutError):
-                    return (name,{},'این منبع اکنون در دسترس نیست؛ آمار نامشخص است.'),[],{}
+                    return (name,{},'این منبع اکنون در دسترس نیست؛ آمار نامشخص است.'),[],{},[]
                 files=[]
                 try:
                     native,_,_=await self.source_bytes(source,'page',request.host)
@@ -3340,15 +3340,15 @@ class Nodes:
                 detected=inventory(link_raw,files)
                 direct=await self.direct_inventory(source,request.host)
                 for proto,count in direct.items(): detected[proto]=max(detected.get(proto,0),count)
-                return (name,counters(headers)),files,detected
+                return (name,counters(headers)),files,detected,published_configs(link_raw,name)
             for start in range(0,len(profile['sources']),4):
                 batch=await asyncio.gather(*(describe(i,profile['sources'][i]) for i in range(start,min(start+4,len(profile['sources'])))))
-                for stats,files,detected in batch:
-                    sources.append(stats); downloads.extend(files)
+                for stats,files,detected,source_configs in batch:
+                    sources.append(stats); downloads.extend(files); configs.extend(source_configs)
                     for proto,count in detected.items(): protocol_counts[proto]=protocol_counts.get(proto,0)+count
             links=[(label,root+'/'+k) for k,label in (
                 ('links','V2Ray / Base64'),('json','Xray JSON'),('clash','Clash / Mihomo'))]
-            return web.Response(text=page(profile['name'],sources,links,downloads,protocol_counts),content_type='text/html',headers=HEADERS)
+            return web.Response(text=page(profile['name'],sources,links,downloads,protocol_counts,configs),content_type='text/html',headers=HEADERS)
         if kind=='source':
             if len(parts) not in (4,6) or not parts[2].isdigit() or int(parts[2])>=len(profile['sources']) or parts[3] not in ('links','json','clash'): raise web.HTTPNotFound()
             suffix='/'.join(parts[4:]) if len(parts)==6 else ''
@@ -3659,6 +3659,25 @@ def _decode_links(raw):
         if decoded is not None: text = decoded
     return [line.strip() for line in text.splitlines() if '://' in line]
 
+def published_configs(raw_links=b'', source=''):
+    """Return every real URI published by vpn-ui for per-config copy on the landing page."""
+    result=[]
+    for index, link in enumerate(_decode_links(raw_links), 1):
+        try:
+            parts=urlsplit(link); scheme=parts.scheme.lower()
+        except ValueError:
+            continue
+        if not scheme: continue
+        aliases={'ss':'Shadowsocks','ssr':'ShadowsocksR','vmess':'VMess','vless':'VLESS','trojan':'Trojan',
+                 'hysteria':'Hysteria','hysteria2':'Hysteria2','hy2':'Hysteria2','tuic':'TUIC','socks':'SOCKS',
+                 'http':'HTTP Proxy','https':'HTTPS Proxy','ssh':'SSH','mieru':'Mieru','anytls':'AnyTLS','tg':'MTProto'}
+        label=aliases.get(scheme,scheme.upper())
+        name=unquote(parts.fragment or '').strip()
+        title=(' · '.join(x for x in (source,label,name) if x)) or f'Config {index}'
+        result.append((title,link,label))
+        if len(result)>=512: break
+    return result
+
 def inventory(raw_links=b'', downloads=()):
     """Return only detected, actually-published protocol counts; never synthesize configs."""
     counts = {}
@@ -3700,7 +3719,7 @@ def stat_card(name, data, error=''):
     metrics = '<div class="metrics"><div><small>دانلود</small><strong dir="ltr">'+amount(down)+'</strong></div><div><small>آپلود</small><strong dir="ltr">'+amount(up)+'</strong></div><div><small>باقی‌مانده</small><strong dir="ltr">'+('∞' if total == 0 else amount(remaining))+'</strong></div></div>'
     return '<section class="card"><div class="card-head"><h2>'+esc(name)+'</h2><span class="pill">'+state+'</span></div><div class="usage"><div class="ring">'+ring+'<strong>'+percent_text+'</strong></div><div><p class="muted">حجم مصرف‌شده</p><div class="big" dir="ltr">'+amount(used)+'</div><p class="muted">دانلود + آپلود</p></div></div>'+metrics+'<div class="chart-label"><span>نسبت دانلود به کل مصرف</span><strong>'+f'{ratio:.0f}%'+ '</strong></div><div class="split" role="img" aria-label="سهم دانلود از مصرف"><span style="width:'+f'{ratio:.2f}'+'%"></span></div>'+remain_chart+'<dl>'+''.join('<div><dt>'+k+'</dt><dd dir="auto">'+esc(v)+'</dd></div>' for k,v in rows)+'</dl></section>'
 
-def page(title, sources, links, downloads=(), protocols=None):
+def page(title, sources, links, downloads=(), protocols=None, configs=()):
     esc = html.escape
     cards = ''.join(stat_card(*s) for s in sources)
     protocols = protocols or {}
@@ -3713,10 +3732,12 @@ def page(title, sources, links, downloads=(), protocols=None):
             if needle in low: return label
         return 'Native'
     files = ''.join('<div class="native-file"><div><span class="native-dot"></span><span><strong>'+esc(name)+'</strong><small class="proto">'+esc(proto(name))+'</small></span></div><div class="native-actions"><button type="button" class="ghost" data-copy="'+esc(url,quote=True)+'">کپی لینک</button><a class="file" href="'+esc(url,quote=True)+'" download="'+esc(name,quote=True)+'">دریافت فایل</a></div></div>' for name,url in downloads)
+    config_rows = ''.join('<div class="native-file"><div><span class="native-dot"></span><span><strong>'+esc(name)+'</strong><small class="proto">'+esc(kind)+'</small></span></div><div class="native-actions"><button type="button" class="ghost" data-copy-config="'+esc(value,quote=True)+'">کپی کانفیگ</button></div></div>' for name,value,kind in configs)
+    config_html = '<section class="links"><div class="section-head"><div><h2>کانفیگ‌های قابل کپی</h2><p class="muted">هر URI واقعی که vpn-ui برای این شناسه منتشر کرده اینجا جداگانه نمایش داده می‌شود؛ هیچ پارامتر Reality/transport حدس زده نمی‌شود.</p></div><span class="pill">'+str(len(configs))+' URI</span></div>'+config_rows+'</section>' if configs else ''
     return '''<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>'''+esc(title)+''' · alirezapanel</title><style>
 :root{color-scheme:dark;--bg:#080b12;--surface:#0f1420;--line:#273248;--muted:#9da9bd;--accent:#59d7ff}*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 90% 0,#14344f88,transparent 46%),radial-gradient(ellipse at 10% 0,#251f5266,transparent 40%),var(--bg);color:#f6f2ef;font:15px/1.8 system-ui,sans-serif}main{max-width:1050px;margin:auto;padding:36px 24px 60px}header{display:flex;justify-content:space-between;gap:20px;align-items:center;border-bottom:1px solid var(--line);padding-bottom:22px}.brand{font-weight:700;letter-spacing:.5px;color:var(--accent)}.eyebrow{font-size:12px;color:var(--muted);margin:0}h1{font-size:clamp(24px,4vw,36px);margin:5px 0 0;overflow-wrap:anywhere}h2{font-size:17px;margin:0}.muted,dt{color:var(--muted)}.intro{margin:24px 0}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(310px,100%),1fr));gap:18px}.card,.links{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:22px}.card-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.pill{font-size:11px;background:#59d7ff15;color:var(--accent);padding:3px 10px;border-radius:20px}.usage{display:flex;align-items:center;gap:26px;margin:22px 0}.usage p{font-size:12px;margin:3px 0}.big{font-size:28px;font-weight:650;letter-spacing:-1px}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0}.metrics>div{padding:10px;border:1px solid var(--line);border-radius:12px;background:#080b1266;min-width:0}.metrics small{display:block;color:var(--muted);font-size:10px}.metrics strong{display:block;overflow:hidden;text-overflow:ellipsis;font-size:12px}.ring{position:relative;width:128px;height:128px;flex-shrink:0}.ring svg{width:100%;height:100%;transform:rotate(-90deg)}circle{fill:none;stroke-width:8}.track{stroke:#30333e}.fill{stroke:var(--accent);stroke-linecap:round}.ring strong{position:absolute;inset:0;display:grid;place-content:center;font-size:23px;direction:ltr}.split{height:6px;background:#849bec;border-radius:8px;overflow:hidden;direction:ltr}.split span{display:block;height:100%;background:linear-gradient(90deg,var(--accent),#6ca8ff)}.chart-label{display:flex;justify-content:space-between;gap:12px;margin-top:14px;font-size:11px;color:var(--muted)}.chart-label strong{color:#f6f2ef}.remain{height:6px;margin-top:6px;background:#252b38;border-radius:8px;overflow:hidden;direction:ltr}.remain span{display:block;height:100%;background:linear-gradient(90deg,#6ca8ff,var(--accent))}dl{margin-bottom:0}dl>div{display:flex;justify-content:space-between;gap:16px;padding:9px 0;border-bottom:1px solid #30323c80}dl>div:last-child{border:0}dd{margin:0;text-align:end;font-variant-numeric:tabular-nums}.links{margin-top:22px}.section-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}.section-head p{margin:5px 0 0}.protocol-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:9px;margin-top:16px}.protocol-card{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--line);background:#080b1266;border-radius:12px;padding:11px 12px}.protocol-card span{font-size:12px;color:var(--muted)}.protocol-card strong{font-size:17px;color:var(--accent)}.link-row{display:flex;gap:12px;align-items:center;padding:20px 0;border-bottom:1px solid var(--line)}.link-row:last-child{border:0}.link-row>div{flex:1;min-width:0}.link-row strong{display:block;font-size:14px}.link-row>div>a{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:var(--muted);max-width:100%}a{color:var(--accent);text-decoration:none}button,.download,.file{font:inherit;font-size:13px;border:1px solid #35506a;border-radius:10px;padding:8px 13px;background:transparent;color:var(--accent);cursor:pointer;white-space:nowrap}button{background:var(--accent);color:#03131b;font-weight:650}a:focus-visible,button:focus-visible{outline:2px solid #c8d4ff;outline-offset:4px}.file{display:inline-block;margin:0;white-space:normal;overflow-wrap:anywhere}.native-file{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid var(--line)}.native-file>div{min-width:0;display:flex;align-items:center;gap:8px}.native-file strong{overflow-wrap:anywhere}.proto{display:inline-block;margin-inline-start:8px;color:var(--muted);font-size:10px;border:1px solid var(--line);border-radius:999px;padding:0 7px}.native-actions{display:flex;gap:7px;align-items:center}.ghost{background:transparent;color:var(--accent);font-weight:500}.native-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent);flex:none}footer{margin-top:24px;font-size:12px;color:var(--muted)}#feedback{min-height:24px;color:var(--accent)}@media(max-width:540px){main{padding:22px 14px}.card,.links{padding:18px}.link-row{flex-wrap:wrap}.link-row>div{flex-basis:100%}.usage{gap:18px}.big{font-size:25px}.metrics{grid-template-columns:1fr}.native-file{align-items:flex-start;flex-direction:column}.native-actions{width:100%;flex-wrap:wrap}header{align-items:start;flex-direction:column;gap:10px}}@media(prefers-color-scheme:light){:root{color-scheme:light;--bg:#f6f3ef;--surface:#fff;--line:#e4dfd8;--muted:#686672;--accent:#a4541c}body{color:#28252c}.track{stroke:#ebe5df}.fill{stroke:#da8445}button{background:#f0a86d}.pill{background:#a4541c10}}
-</style></head><body><main><header><div><p class="eyebrow">اشتراک شخصی</p><h1>'''+esc(title)+'''</h1></div><span class="brand" dir="ltr">alirezapanel</span></header><p class="intro muted">حجم، انقضا و همه مسیرهای اتصال در یک نگاه؛ لینک اشتراک با یک لمس مستقیماً کپی می‌شود.</p><div class="cards">'''+cards+'''</div>'''+inventory_html+'''<section class="links"><h2>لینک اشتراک و کانفیگ‌ها</h2><p class="muted">فرمت مناسب برنامه را مستقیم کپی کنید. فایل‌های مستقل WireGuard/OpenVPN/AmneziaWG و سایر خروجی‌های بومی، در صورت فعال بودن پروتکل، پایین همین بخش نمایش داده می‌شوند.</p>'''+actions+files+'''<p id="feedback" role="status" aria-live="polite"></p></section><footer>این لینک خصوصی است؛ آن را فقط در اختیار صاحب اشتراک قرار دهید.<br>نمودارها مصرف تجمیعی فعلی سرور را نشان می‌دهند؛ آمار با بازکردن دوبارهٔ صفحه تازه می‌شود. سهمیهٔ هر منبع مستقل است.</footer></main><script>
-document.addEventListener('click',async function(e){const b=e.target.closest('[data-copy]');if(!b)return;const url=new URL(b.dataset.copy,location.href).href;const out=document.getElementById('feedback');try{if(navigator.clipboard&&isSecureContext)await navigator.clipboard.writeText(url);else{const t=document.createElement('textarea');t.value=url;document.body.append(t);t.select();const ok=document.execCommand('copy');t.remove();if(!ok)throw Error();}out.textContent='✓ لینک مستقیماً کپی شد.';}catch(_){out.textContent='مرورگر اجازه کپی خودکار نداد؛ خود لینک را لمس و کپی کنید.';}});
+</style></head><body><main><header><div><p class="eyebrow">اشتراک شخصی</p><h1>'''+esc(title)+'''</h1></div><span class="brand" dir="ltr">alirezapanel</span></header><p class="intro muted">حجم، انقضا و همه مسیرهای اتصال در یک نگاه؛ لینک اشتراک با یک لمس مستقیماً کپی می‌شود.</p><div class="cards">'''+cards+'''</div>'''+inventory_html+'''<section class="links"><h2>لینک اشتراک و کانفیگ‌ها</h2><p class="muted">فرمت مناسب برنامه را مستقیم کپی کنید. فایل‌های مستقل WireGuard/OpenVPN/AmneziaWG و سایر خروجی‌های بومی، در صورت فعال بودن پروتکل، پایین همین بخش نمایش داده می‌شوند.</p>'''+actions+files+'''<p id="feedback" role="status" aria-live="polite"></p></section>'''+config_html+'''<footer>این لینک خصوصی است؛ آن را فقط در اختیار صاحب اشتراک قرار دهید.<br>نمودارها مصرف تجمیعی فعلی سرور را نشان می‌دهند؛ آمار با بازکردن دوبارهٔ صفحه تازه می‌شود. سهمیهٔ هر منبع مستقل است.</footer></main><script>
+document.addEventListener('click',async function(e){const b=e.target.closest('[data-copy],[data-copy-config]');if(!b)return;const raw=b.dataset.copyConfig;const value=raw!==undefined?raw:new URL(b.dataset.copy,location.href).href;const out=document.getElementById('feedback');try{if(navigator.clipboard&&isSecureContext)await navigator.clipboard.writeText(value);else{const t=document.createElement('textarea');t.value=value;document.body.append(t);t.select();const ok=document.execCommand('copy');t.remove();if(!ok)throw Error();}out.textContent=raw!==undefined?'✓ کانفیگ مستقیماً کپی شد.':'✓ لینک مستقیماً کپی شد.';}catch(_){out.textContent='مرورگر اجازه کپی خودکار نداد؛ مقدار را دستی کپی کنید.';}});
 </script></body></html>'''
 NODE_EMBEDDED_SUBSCRIBER_PY_EOF
 
@@ -4711,11 +4732,36 @@ class Features:
                 raise web.HTTPBadRequest(text='این کنترل‌ها فقط برای کلاینت Xray در VLESS، VMess، Trojan و Shadowsocks تأیید شده‌اند. پروتکل دیگر تغییر نکرد.')
             needs_sniff = any(choices[k] for k in CATEGORIES) or choices['domains'] or choices['torrent']
             if needs_sniff:
+                # Filtering should be one action. vpn-ui v1.9.4 supports safe partial
+                # inbound updates, so only the sniffing field is changed and transport,
+                # Reality/TLS, clients, limits and routing are left untouched.
                 for inbound in found:
                     sniff = inbound.get('sniffing') or {}
-                    if isinstance(sniff,str): sniff = json.loads(sniff)
-                    if not sniff.get('enabled') or not {'http','tls'} <= set(sniff.get('destOverride', [])) or sniff.get('metadataOnly'):
-                        raise web.HTTPBadRequest(text='برای فیلتر واقعی، Sniffing اینباند را با HTTP و TLS روشن و metadataOnly را خاموش کن؛ سپس دوباره اعمال کن. تشخیص QUIC و تورنت رمزگذاری‌شده محدود است.')
+                    if isinstance(sniff,str):
+                        try: sniff=json.loads(sniff)
+                        except ValueError: sniff={}
+                    dest=list(sniff.get('destOverride') or [])
+                    changed=False
+                    for item in ('http','tls'):
+                        if item not in dest: dest.append(item); changed=True
+                    if not sniff.get('enabled'): sniff['enabled']=True; changed=True
+                    if sniff.get('metadataOnly'): sniff['metadataOnly']=False; changed=True
+                    sniff['destOverride']=dest
+                    if changed:
+                        await self.native(request, 'POST', 'panel/api/inbounds/update/'+str(inbound.get('id')),
+                                          {'sniffing': json.dumps(sniff,separators=(',',':'))})
+                # Re-read to verify the native panel accepted the prerequisite before
+                # changing Xray routing policy; failure stays explicit and reversible.
+                verified = await self.native(request, 'GET', 'panel/api/inbounds/list')
+                wanted={i.get('id') for i in found}
+                for inbound in verified or []:
+                    if inbound.get('id') not in wanted: continue
+                    sniff=inbound.get('sniffing') or {}
+                    if isinstance(sniff,str):
+                        try: sniff=json.loads(sniff)
+                        except ValueError: sniff={}
+                    if not sniff.get('enabled') or not {'http','tls'} <= set(sniff.get('destOverride') or []) or sniff.get('metadataOnly'):
+                        raise web.HTTPBadGateway(text='پنل نتوانست Sniffing لازم برای فیلتر را خودکار فعال کند؛ هیچ قانون فیلتر ناقصی اعمال نشد.')
             if choices['gaming'] and original.get('outbounds') and original['outbounds'][0].get('protocol') == 'blackhole':
                 raise web.HTTPBadRequest(text='خروجی پیش‌فرض مسدود است؛ Gaming مسیر مسدود پیش‌فرض را دور نمی‌زند.')
             try: updated = apply_policy(original, email, choices)
@@ -4818,7 +4864,7 @@ cat > "$STAGE/features.js" <<'NODE_EMBEDDED_FEATURES_JS_EOF'
     const dialog=node('dialog');dialog.className='alireza-policy-dialog';dialog.dir='rtl';
     const title=node('h3','فیلتر و حالت گیمینگ کلاینت');const who=node('input');who.value=email||'';who.placeholder='شناسه / ایمیل کلاینت';who.readOnly=!!email;who.setAttribute('aria-label','شناسه کلاینت');
     const status=node('p');status.setAttribute('role','status');
-    const info=node('p','فیلتر دامنه برای همین کاربر روی سرور انتخاب‌شده اعمال می‌شود. نیاز به دیتای geosite دارد؛ پوشش همهٔ محتوا یا ترافیک رمزگذاری‌شده تضمین نمی‌شود. فقط VLESS / VMess / Trojan / Shadowsocks هستهٔ Xray پشتیبانی می‌شوند. Sniffing HTTP/TLS باید روشن باشد. تغییر تنظیمات هسته ممکن است اتصال‌ها را کوتاه قطع کند.');
+    const info=node('p','فیلتر دامنه برای همین کاربر روی سرور انتخاب‌شده اعمال می‌شود. نیاز به دیتای geosite دارد؛ پوشش همهٔ محتوا یا ترافیک رمزگذاری‌شده تضمین نمی‌شود. فقط VLESS / VMess / Trojan / Shadowsocks هستهٔ Xray پشتیبانی می‌شوند. پیش‌نیاز Sniffing HTTP/TLS هنگام اعمال به‌صورت خودکار تنظیم می‌شود. تغییر تنظیمات هسته ممکن است اتصال‌ها را کوتاه قطع کند.');
     const inputs={};dialog.append(title,who,info);
     for(const [key,label] of [['adult','مسدودسازی محتوای بزرگسال'],['ads','مسدودسازی تبلیغات'],['social','مسدودسازی شبکه‌های اجتماعی'],['messengers','مسدودسازی پیام‌رسان‌ها / ارتباطات'],['youtube','مسدودسازی یوتیوب'],['torrent','مسدودسازی تورنت قابل تشخیص']]){
       const row=node('label');const input=node('input');input.type='checkbox';inputs[key]=input;row.append(input,document.createTextNode(label));dialog.append(row);
