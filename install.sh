@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alirezapanel 1.4.0 -- one-file ONLINE installer, 2026-09-16
+# alirezapanel 1.5.0 -- one-file ONLINE installer, 2026-09-17
 # Debian 12/13 or Ubuntu 24.04, x86_64, systemd, fresh server.
 # No build toolchain, Docker, Node.js, or npm is installed on the target.
 # Upstream executables and their full interfaces are retained; a small gateway
@@ -293,7 +293,7 @@ trap cleanup EXIT
 say 'Installing small runtime dependencies from your distribution.'
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y --no-install-recommends ca-certificates curl python3 python3-aiohttp python3-yaml python3-bcrypt \
+apt-get install -y --no-install-recommends ca-certificates curl logrotate python3 python3-aiohttp python3-yaml python3-bcrypt \
     openssl iproute2 dnsutils sqlite3 tar util-linux
 
 STAGE=$(mktemp -d /opt/.alirezapanel-install.XXXXXXXX)
@@ -370,6 +370,7 @@ import aiohttp
 from aiohttp import web
 from nodes import Nodes
 from features import Features
+from insights import Insights
 from dns_clients import DNSClients
 from multidict import CIMultiDict
 from yarl import URL
@@ -394,6 +395,7 @@ class Gateway:
         self.agh_lock = asyncio.Lock()
         self.nodes = Nodes(self)
         self.features = Features(self)
+        self.insights = Insights(self)
         self.dns_clients = DNSClients(self)
         self.agh_logged_in = False
 
@@ -521,6 +523,8 @@ class Gateway:
         if not agh:
             text = self.fix_restart_html(text)
             text = text.replace('<a-input v-model.trim="client.email"></a-input>', '<a-input v-model.trim="client.email"></a-input><button type="button" class="alireza-policy-button" data-alireza-policy :data-email="client.email">فیلتر / گیمینگ</button>')
+            text = text.replace('@click="showAccountInfo(row)"></a-button>', '@click="showAccountInfo(row)"></a-button><button type="button" class="alireza-user-logs" data-alireza-user-logs :data-email="row.email">لاگ</button>')
+            text = text.replace('data-alireza-policy :data-email="client.email">فیلتر / گیمینگ</button>', 'data-alireza-policy :data-email="client.email">فیلتر / گیمینگ</button><button type="button" class="alireza-user-logs" data-alireza-user-logs :data-email="client.email">لاگ اتصال</button>')
         # Don't replace arbitrary JavaScript/JSON identifiers, protocol names,
         # URLs, user configuration or legal attribution. Branding is DOM-only.
         text = re.sub(r"<title>.*?</title>", "<title>alirezapanel" + (" · DNS" if agh else "") + "</title>",
@@ -529,13 +533,15 @@ class Gateway:
         # The stylesheet loads after the upstream styles. Mark the document before
         # first paint; don't override saved user theme choices on every visit.
         tag = ('<link rel="stylesheet" href="' + html.escape(base, quote=True) +
-               '_alireza/theme.css?v=1.4.0"><script>document.documentElement.setAttribute("data-alireza-theme","ember");'
+               '_alireza/theme.css?v=1.5.0"><script>document.documentElement.setAttribute("data-alireza-theme","ember");'
                'window.ALIREZA=' + opts + ';</script><script defer src="' +
                html.escape(base, quote=True) + '_alireza/brand.js?v=1.1.0"></script>')
         if not agh:
             tag += '<script defer src="' + html.escape(base, quote=True) + '_alireza/nodes.js?v=1.0.0"></script>'
         if not agh:
-            tag += '<script defer src="' + html.escape(base, quote=True) + '_alireza/features.js?v=1.5.0"></script>'
+            tag += '<script defer src="' + html.escape(base, quote=True) + '_alireza/features.js?v=1.4.0"></script>'
+        if not agh:
+            tag += '<script defer src="' + html.escape(base, quote=True) + '_alireza/insights.js?v=1.5.0"></script>'
         return re.sub(r"</head\s*>", tag + "</head>", text, count=1, flags=re.I)
 
     def dns_shell(self, upstream_html, base, managed=False):
@@ -614,6 +620,9 @@ class Gateway:
         dns_response = await self.dns_clients.api(request, relative)
         if dns_response is not None:
             return dns_response
+        insight_response = await self.insights.route(request, relative)
+        if insight_response is not None:
+            return insight_response
         feature_response = await self.features.route(request, relative)
         if feature_response is not None:
             return feature_response
@@ -1444,13 +1453,18 @@ html[data-alireza-theme="ember"] #alireza-dns { background:var(--ap-bg); height:
 .alireza-game-box{border:1px solid var(--ap-border);border-radius:12px;padding:14px;margin-top:14px}
 .alireza-game-box p{font-size:12px;color:var(--ap-muted);margin-bottom:0}
 .alireza-game-box button[aria-pressed=false]{background:var(--ap-raised);color:var(--ap-text);border-color:var(--ap-border)}
-/* Per-user native usage + subscription studio: on-demand only, no polling. */
-.alireza-usage-dialog,.alireza-sub-dialog{width:min(760px,94vw);max-height:88vh;overflow:auto;border:1px solid var(--ap-border);border-radius:18px;background:var(--ap-surface);color:var(--ap-text);padding:22px;box-shadow:0 24px 80px rgba(0,0,0,.35)}
-.alireza-usage-dialog::backdrop,.alireza-sub-dialog::backdrop{background:rgba(0,0,0,.68)}
-.alireza-usage-dialog input,.alireza-sub-dialog input{width:min(430px,100%);padding:10px 12px;margin:8px 6px;border:1px solid var(--ap-border);border-radius:10px;background:var(--ap-bg);color:var(--ap-text)}
-.alireza-stat-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:16px 0}.alireza-stat-grid section{padding:14px;border:1px solid var(--ap-border);border-radius:14px;background:var(--ap-raised)}.alireza-stat-grid small{display:block;color:var(--ap-muted);margin-bottom:7px}.alireza-stat-grid strong{font-size:18px}.alireza-bars>div{margin:13px 0}.alireza-bars span{display:block;margin-bottom:6px}.alireza-bars i{display:block;height:10px;background:var(--ap-bg);border:1px solid var(--ap-border);border-radius:99px;overflow:hidden}.alireza-bars b{display:block;height:100%;background:var(--ap-orange);border-radius:99px}.alireza-log-list{display:grid;gap:7px}.alireza-log-list>div{display:grid;grid-template-columns:1fr 1.5fr auto;gap:10px;padding:10px 12px;border:1px solid var(--ap-border);border-radius:10px}.alireza-sub-hero{padding:20px;border:1px solid #634027;border-radius:18px;background:linear-gradient(135deg,var(--ap-orange-soft),var(--ap-surface));margin-top:14px}.alireza-ring{--p:0;position:relative;width:150px;height:150px;margin:18px auto;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--ap-orange) calc(var(--p)*1%),var(--ap-raised) 0)}.alireza-ring:before{content:'';width:116px;height:116px;border-radius:50%;background:var(--ap-surface);position:absolute}.alireza-ring>div{position:relative;text-align:center}.alireza-ring strong,.alireza-ring small{display:block}.alireza-ring strong{font-size:24px}.alireza-sub-links>div{display:flex;gap:8px;align-items:center;margin:7px 0}.alireza-sub-links code{direction:ltr;overflow:auto;flex:1;padding:9px;border-radius:8px;background:var(--ap-bg);border:1px solid var(--ap-border)}
-@media(max-width:650px){.alireza-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.alireza-log-list>div{grid-template-columns:1fr}.alireza-usage-dialog,.alireza-sub-dialog{padding:14px}}
 
+/* Per-client diagnostics only; native dashboard and AdGuard layout unchanged. */
+.alireza-user-logs{display:none}
+[data-alireza-admin] .alireza-user-logs{display:inline-block;border:1px solid var(--ap-border);border-radius:8px;background:var(--ap-surface);color:var(--ap-text);padding:3px 9px;font:inherit;font-size:12px;cursor:pointer}
+.alireza-log-dialog{width:min(980px,95vw);max-width:980px}
+.alireza-log-who{font-size:18px;font-weight:650;overflow-wrap:anywhere;color:var(--ap-accent,#e99045)}
+.alireza-log-scroll{max-height:48vh;overflow:auto;border:1px solid var(--ap-border);border-radius:12px}
+.alireza-log-scroll:empty{display:none}
+.alireza-log-dialog table{width:100%;border-collapse:collapse;font-size:12px}
+.alireza-log-dialog th,.alireza-log-dialog td{padding:10px 12px;border-bottom:1px solid var(--ap-border);text-align:start;white-space:nowrap;max-width:340px;overflow:hidden;text-overflow:ellipsis}
+.alireza-log-dialog th{position:sticky;top:0;background:var(--ap-bg)}
+.alireza-log-dialog>p:last-child{font-size:12px;color:var(--ap-muted)}
 ALIREZAPANEL_EMBEDDED_3_EOF
 
 cat > "$STAGE/logo.svg" <<'ALIREZAPANEL_EMBEDDED_4_EOF'
@@ -1458,7 +1472,7 @@ cat > "$STAGE/logo.svg" <<'ALIREZAPANEL_EMBEDDED_4_EOF'
 ALIREZAPANEL_EMBEDDED_4_EOF
 
 cat > "$STAGE/README.txt" <<'ALIREZAPANEL_EMBEDDED_5_EOF'
-alirezapanel 1.4.0
+alirezapanel 1.5.0
 =================
 
 One online installer. Full upstream VPN-UI v1.9.4 and AdGuard Home v0.107.79
@@ -1863,6 +1877,63 @@ Filter / Gaming in the client editor. Turn Gaming off to restore normal UDP rout
 The new policy API advertises version 2. The UI verifies this on the selected node
 before writes; an older node cannot silently accept and ignore Gaming controls.
 A fresh template comparison also rejects edits detected before the save operation.
+
+SUBSCRIBER PAGE AND PER-USER CONNECTION LOGS (1.5)
+Browser visits to the gateway native-sub links or a combined subscription open a
+responsive Persian page with inline SVG usage charts, upload/download split,
+remaining quota, expiry, copy buttons, and native protocol-file downloads.
+Counters come directly from the native Subscription-Userinfo header. Unknown
+values stay unknown; a zero native quota means unlimited. These are current
+cumulative snapshots, not invented daily history. Combined profiles show each
+source independently, because quotas must not be added or double-counted.
+Application requests retain the original native bytes and metadata. The raw=1
+link forces raw output even when a browser sends Accept: text/html. OpenVPN,
+WireGuard, AmneziaWG and other native downloadable configurations are discovered
+from the authenticated-by-sub-ID native page; ownership is checked again by the
+native backend when downloading. Optional formats still depend on native settings
+and the protocol. Subscription pages are private, no-store, no-referrer, noindex,
+and use no external fonts, trackers, chart library or automatic refresh.
+
+Super-admins get a Log button beside each client and in the client editor. It
+opens recent Xray connection events for that exact email on the selected local
+server or node. It shows server time, source, destination, route and event, never
+message payloads. Identical prefixes do not match other clients. Protocols/cores
+that do not emit an Xray email identity are outside this viewer; the native core
+log tools remain available. Native DNS/AdGuard screens are unchanged in 1.5.
+
+Connection logging is opt-in: open a user's Log and choose Enable server logging.
+Xray writes one access log for the server; the viewer filters that log per user.
+Configuration is validated through the native API with a recovery checkpoint and
+rollback on restart failure. Enabling/disabling restarts Xray briefly. Disabling
+may also affect native IP-limit features that depend on access logs. Existing
+custom log destinations are never overwritten automatically. Readable custom logs
+must be under /var/log/vpn-ui or /opt/alirezapanel/vpn/logs. Managed logs are root
+owned and group-readable only by the panel service. No pre-enable history exists.
+
+The reader examines at most six 512 KiB tail slices per request, returns at most
+200 recent rows, permits two simultaneous reads, and performs blocking disk work
+outside the gateway event loop. There is no polling or new resident monitoring
+process. A low-priority systemd timer invokes logrotate every five minutes for the
+managed access log and the native recent archives, rotating at 4 MiB with one
+previous copy each. This is a periodic retention threshold, not a hard disk quota;
+busy logs can exceed it between checks. Copy-truncate rotation and native hourly
+archiving can race, so this diagnostic view is not a complete audit archive.
+
+Upgrade the main server AND nodes with sudo bash install.sh --repair. Legacy
+--enable-nodes only updates the node bridge and subscriber renderer; use --repair
+for the new logging API, buttons, permissions, and rotation units.
+
+1.5 VERIFICATION
+Pinned native panel: real node login, inbound creation/update, logging config
+validation/restart/readback, browser subscription rendering and untouched raw
+Subscription-Userinfo headers. Pinned Xray: actual VLESS/TLS and UDP traffic,
+per-user access-log parsing, exact identity isolation, and existing filter/gaming
+regressions. API tests cover permissions, rollback, custom-log protection,
+read bounds, unknown/missing stats, private page headers, HTML escaping, remote
+sources and native file-download byte preservation. DOM tests cover Vue row
+binding, selected-node requests, log toggles, safe text, copy buttons, no polling,
+and preservation of the DNS interface. Syntax checks cover every embedded module.
+A full installation/load test on a physical 1 GiB VPS was not performed here.
 ALIREZAPANEL_EMBEDDED_5_EOF
 
 cat > "$STAGE/LICENSE-vpn-ui.txt" <<'ALIREZAPANEL_EMBEDDED_6_EOF'
@@ -2620,6 +2691,8 @@ def permitted(method, tail):
         return True
     if method == 'GET' and path in ('panel/api/clients/list','panel/api/clients/assignable','_alireza/features/tls'):
         return True
+    if method == 'POST' and path in ('_alireza/insights/read','_alireza/insights/configure'):
+        return True
     if method == 'POST' and path == '_alireza/features/policy':
         return True
     if method == 'GET' and re.fullmatch(r'panel/core/(logs|config)/[a-z0-9_-]+', path):
@@ -3081,7 +3154,7 @@ class Nodes:
         body=body.replace(match[0],'const basePath = '+json.dumps(mount)+';',1)
         body=re.sub(r'window\.ALIREZA=\{.*?\};',lambda m:'window.ALIREZA='+json.dumps({'base':master,'dns':False,'node':ident,'mount':mount})+';',body,count=1)
         # Brand/theme are provided by the main panel and are not agent API routes.
-        for asset in ('brand.js','theme.css','logo.svg','nodes.js','features.js'):
+        for asset in ('brand.js','theme.css','logo.svg','nodes.js','features.js','insights.js'):
             body=body.replace(mount+'_alireza/'+asset,master+'_alireza/'+asset)
         body=body.replace('window.location.hostname',json.dumps(URL(node['endpoint']).host))
         body=re.sub(r'(?<![\w.])location\.hostname',json.dumps(URL(node['endpoint']).host),body)
@@ -3122,8 +3195,23 @@ class Nodes:
         parts=tail.split('/',2)
         if len(parts)<2: raise web.HTTPNotFound()
         kind,sid=parts[:2]; suffix=parts[2] if len(parts)>2 else ''
+        browser = ('text/html' in request.headers.get('Accept','') or request.query.get('html') == '1')
+        if not request.path.startswith(AGENT) and kind in ('links','page') and not suffix and browser and request.query.get('raw') != '1':
+            from subscriber import page, counters, exports, HEADERS
+            _,headers,_=await self.sub_bytes('links',sid,request.host)
+            root=NATIVE_SUB+'links/'+sid
+            downloads=[]
+            try:
+                native,_,_=await self.sub_bytes('page',sid,request.host)
+                downloads=exports(native,root)
+            except (web.HTTPException,aiohttp.ClientError,asyncio.TimeoutError):
+                pass  # Link formats remain available when optional file export discovery fails.
+            links=[(label,NATIVE_SUB+k+'/'+sid+'?raw=1') for k,label in (
+                ('links','V2Ray / Base64'),('json','Xray JSON'),('clash','Clash / Mihomo'))]
+            return web.Response(text=page('اشتراک شما',[('مصرف اشتراک',counters(headers))],links,downloads),content_type='text/html',headers=HEADERS)
         raw,headers,_=await self.sub_bytes(kind,sid,request.host,suffix)
         headers.popall('Set-Cookie',None); headers['Cache-Control']='no-store'
+        headers['Referrer-Policy']='no-referrer'; headers['X-Robots-Tag']='noindex, nofollow'
         return web.Response(body=raw,headers=headers)
 
     async def source_bytes(self, source, kind, host, suffix=''):
@@ -3146,16 +3234,36 @@ class Nodes:
         profile=self.state['profiles'].get(parts[0])
         if not profile: raise web.HTTPNotFound()
         kind=parts[1] if len(parts)>1 else 'links'
-        if len(parts)==1 and 'text/html' in request.headers.get('Accept',''):
+        if len(parts)==1 and 'text/html' in request.headers.get('Accept','') and request.query.get('raw') != '1':
+            from subscriber import page, counters, exports, HEADERS
             root=PUBLIC+parts[0]
-            links=''.join('<li><a href="'+html.escape(root+'/'+k)+'">'+label+'</a></li>' for k,label in (
-                ('links','Base64 / V2Ray'),('json','Xray JSON'),('clash','Clash / Mihomo')))
-            links+=''.join('<li>'+html.escape(self.source_name(s))+' — '+''.join('<a href="'+root+'/source/'+str(i)+'/'+k+'">'+k+'</a> ' for k in ('links','json','clash'))+'</li>' for i,s in enumerate(profile['sources']))
-            return web.Response(text='<!doctype html><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>alirezapanel</title><body style="background:#111;color:#eee;font:18px system-ui;padding:30px"><h1>'+html.escape(profile['name'])+'</h1><ul>'+links+'</ul><p>Native protocol config files remain available from each node’s Inbounds page.</p></body>',content_type='text/html',headers={'Cache-Control':'no-store'})
+            sources=[]; downloads=[]
+            async def describe(index,source):
+                name=self.source_name(source)
+                try:
+                    _,headers,_=await self.source_bytes(source,'links',request.host)
+                except (web.HTTPException,aiohttp.ClientError,asyncio.TimeoutError):
+                    return (name,{},'این منبع اکنون در دسترس نیست؛ آمار نامشخص است.'),[]
+                files=[]
+                try:
+                    native,_,_=await self.source_bytes(source,'page',request.host)
+                    files=[(name+' · '+label,url) for label,url in exports(native,root+'/source/'+str(index)+'/links')]
+                except (web.HTTPException,aiohttp.ClientError,asyncio.TimeoutError):
+                    pass
+                return (name,counters(headers)),files
+            for start in range(0,len(profile['sources']),4):
+                batch=await asyncio.gather(*(describe(i,profile['sources'][i]) for i in range(start,min(start+4,len(profile['sources'])))))
+                for stats,files in batch: sources.append(stats); downloads.extend(files)
+            links=[(label,root+'/'+k) for k,label in (
+                ('links','V2Ray / Base64'),('json','Xray JSON'),('clash','Clash / Mihomo'))]
+            return web.Response(text=page(profile['name'],sources,links,downloads),content_type='text/html',headers=HEADERS)
         if kind=='source':
-            if len(parts)!=4 or not parts[2].isdigit() or int(parts[2])>=len(profile['sources']) or parts[3] not in ('links','json','clash'): raise web.HTTPNotFound()
-            raw,headers,_=await self.source_bytes(profile['sources'][int(parts[2])],parts[3],request.host)
+            if len(parts) not in (4,6) or not parts[2].isdigit() or int(parts[2])>=len(profile['sources']) or parts[3] not in ('links','json','clash'): raise web.HTTPNotFound()
+            suffix='/'.join(parts[4:]) if len(parts)==6 else ''
+            if suffix and (parts[3]!='links' or not re.fullmatch(r'configs/[A-Za-z0-9_.-]{1,160}',suffix)): raise web.HTTPNotFound()
+            raw,headers,_=await self.source_bytes(profile['sources'][int(parts[2])],parts[3],request.host,suffix)
             headers.popall('Set-Cookie',None); headers['Cache-Control']='no-store'
+            headers['Referrer-Policy']='no-referrer'; headers['X-Robots-Tag']='noindex, nofollow'
             return web.Response(body=raw,headers=headers)
         if kind not in ('links','json','clash') or len(parts)>2: raise web.HTTPNotFound()
         # Fail closed instead of returning a truncated profile that makes clients
@@ -3345,9 +3453,10 @@ def install(root, files):
     previous=gateway.read_text(encoding='utf-8')
     updated=patch_gateway(previous)
     compile(files['nodes.py'],'nodes.py','exec')
+    compile(files['subscriber.py'],'subscriber.py','exec')
     backup=Path('/var/backups/alirezapanel')/('nodes-'+str(time.time_ns()))
     backup.mkdir(parents=True,mode=0o700)
-    paths=[root/'gateway'/name for name in ('gateway.py','nodes.py','nodes.js','nodes.html')]
+    paths=[root/'gateway'/name for name in ('gateway.py','nodes.py','nodes.js','nodes.html','subscriber.py')]
     for path in paths:
         if path.exists(): shutil.copy2(path,backup/path.name)
     meta=gateway.stat()
@@ -3363,7 +3472,7 @@ def install(root, files):
             shutil.copy2(cli,backup/'alirezapanel-cli')
     # Write all optional modules first, gateway activation last. The current
     # process continues serving until the caller restarts only the gateway.
-    for name,content in [('nodes.py',files['nodes.py']),('nodes.js',files['nodes.js']),('nodes.html',files['nodes.html']),('gateway.py',updated)]:
+    for name,content in [('subscriber.py',files['subscriber.py']),('nodes.py',files['nodes.py']),('nodes.js',files['nodes.js']),('nodes.html',files['nodes.html']),('gateway.py',updated)]:
         target=root/'gateway'/name
         fd,tmp=tempfile.mkstemp(prefix='.nodes-',dir=target.parent)
         try:
@@ -3386,6 +3495,242 @@ def install(root, files):
     print('Previous gateway files backed up to:',backup)
 NODE_EMBEDDED_INSTALL_EOF
 
+
+cat > "$STAGE/subscriber.py" <<'NODE_EMBEDDED_SUBSCRIBER_PY_EOF'
+"""Private subscription landing pages: native counters, no tracking or polling."""
+import datetime
+import html
+import re
+from html.parser import HTMLParser
+from urllib.parse import urlsplit, unquote
+
+HEADERS = {'Cache-Control': 'no-store, private', 'Referrer-Policy': 'no-referrer',
+           'X-Content-Type-Options': 'nosniff', 'X-Robots-Tag': 'noindex, nofollow',
+           'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"}
+
+def counters(headers):
+    value = next((v for k,v in headers.items() if k.lower() == 'subscription-userinfo'), '')
+    result = {}
+    for part in value[:1024].split(';'):
+        key, sep, number = part.strip().partition('=')
+        if sep and key in ('upload','download','total','expire') and re.fullmatch(r'-?\d{1,19}', number.strip()):
+            n = int(number)
+            if n >= 0 or key == 'expire': result[key] = n
+    return result
+
+def amount(n):
+    if n is None: return 'نامشخص'
+    for unit in ('B','KiB','MiB','GiB','TiB','PiB'):
+        if n < 1024: return f'{n:,.1f} {unit}'
+        n /= 1024
+    return f'{n:,.1f} EiB'
+
+class ConfigLinks(HTMLParser):
+    def __init__(self): super().__init__(); self.links = []
+    def handle_starttag(self, tag, attrs):
+        if tag != 'a': return
+        a = dict(attrs)
+        if 'sub-config-btn' not in a.get('class','').split(): return
+        path = unquote(urlsplit(a.get('href','')).path)
+        match = re.search(r'/configs/([A-Za-z0-9_.-]{1,160})$', path)
+        if match and len(self.links) < 256:
+            self.links.append((match[1], a.get('download') or a.get('title') or match[1]))
+
+def exports(raw, root):
+    parser = ConfigLinks(); parser.feed(raw.decode('utf-8', errors='replace'))
+    return [(name, root+'/configs/'+key) for key,name in parser.links]
+
+def stat_card(name, data, error=''):
+    esc = html.escape
+    if error: return '<section class="card"><h2>'+esc(name)+'</h2><p class="muted">'+esc(error)+'</p></section>'
+    up, down, total, expiry = (data.get(k) for k in ('upload','download','total','expire'))
+    used = up+down if up is not None and down is not None else None
+    remaining = max(0,total-used) if total and used is not None else None
+    percent = min(100,used/total*100) if total and used is not None else None
+    percent_text = f'{percent:.1f}%' if percent is not None else '∞' if total == 0 else '—'
+    if expiry is None: date = 'نامشخص'
+    elif expiry == 0: date = 'بدون انقضا'
+    elif expiry < 0: date = f'{abs(expiry)/86400:g} روز از اولین اتصال'
+    else:
+        try: date = datetime.datetime.fromtimestamp(expiry, datetime.timezone.utc).strftime('%Y-%m-%d · UTC')
+        except (ValueError,OverflowError,OSError): date = 'نامشخص'
+    now = datetime.datetime.now(datetime.timezone.utc).timestamp()
+    state = 'منقضی شده' if expiry and expiry > 0 and expiry <= now else 'حجم تمام شده' if total and used is not None and used >= total else 'آمار مصرف'
+    # Snapshot only: these counters do not describe connection health or history.
+    rows = [('دانلود',amount(down)),('آپلود',amount(up)),('سقف حجم','نامحدود' if total == 0 else amount(total)),('باقی‌مانده','نامحدود' if total == 0 else amount(remaining)),('انقضا',date)]
+    ring = f'<svg viewBox="0 0 120 120" role="img" aria-label="درصد حجم مصرف‌شده {esc(percent_text)}"><circle class="track" cx="60" cy="60" r="50"/><circle class="fill" cx="60" cy="60" r="50" pathLength="100" stroke-dasharray="{percent or 0:.2f} 100"/></svg>'
+    ratio = down/used*100 if used and down is not None else 0
+    return '<section class="card"><div class="card-head"><h2>'+esc(name)+'</h2><span class="pill">'+state+'</span></div><div class="usage"><div class="ring">'+ring+'<strong>'+percent_text+'</strong></div><div><p class="muted">حجم مصرف‌شده</p><div class="big" dir="ltr">'+amount(used)+'</div><p class="muted">دانلود + آپلود</p></div></div><div class="split" role="img" aria-label="سهم دانلود از مصرف"><span style="width:'+f'{ratio:.2f}'+'%"></span></div><dl>'+''.join('<div><dt>'+k+'</dt><dd dir="auto">'+esc(v)+'</dd></div>' for k,v in rows)+'</dl></section>'
+
+def page(title, sources, links, downloads=()):
+    esc = html.escape
+    cards = ''.join(stat_card(*s) for s in sources)
+    actions = ''.join('<div class="link-row"><div><strong>'+esc(name)+'</strong><a dir="ltr" href="'+esc(url,quote=True)+'">'+esc(url)+'</a></div><button type="button" data-copy="'+esc(url,quote=True)+'">کپی لینک</button><a class="download" href="'+esc(url,quote=True)+'">دریافت</a></div>' for name,url in links)
+    files = ''.join('<a class="file" href="'+esc(url,quote=True)+'" download="'+esc(name,quote=True)+'">↓ '+esc(name)+'</a>' for name,url in downloads)
+    return '''<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>'''+esc(title)+''' · alirezapanel</title><style>
+:root{color-scheme:dark;--bg:#101115;--surface:#1a1c22;--line:#30323c;--muted:#a9acb8;--accent:#f4a064}*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 90% 0,#3b281d66,transparent 50%),var(--bg);color:#f6f2ef;font:15px/1.8 system-ui,sans-serif}main{max-width:1050px;margin:auto;padding:36px 24px 60px}header{display:flex;justify-content:space-between;gap:20px;align-items:center;border-bottom:1px solid var(--line);padding-bottom:22px}.brand{font-weight:700;letter-spacing:.5px;color:var(--accent)}.eyebrow{font-size:12px;color:var(--muted);margin:0}h1{font-size:clamp(24px,4vw,36px);margin:5px 0 0;overflow-wrap:anywhere}h2{font-size:17px;margin:0}.muted,dt{color:var(--muted)}.intro{margin:24px 0}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(310px,100%),1fr));gap:18px}.card,.links{background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:24px}.card-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.pill{font-size:11px;background:#f4a06415;color:var(--accent);padding:3px 10px;border-radius:20px}.usage{display:flex;align-items:center;gap:26px;margin:22px 0}.usage p{font-size:12px;margin:3px 0}.big{font-size:28px;font-weight:650;letter-spacing:-1px}.ring{position:relative;width:128px;height:128px;flex-shrink:0}.ring svg{width:100%;height:100%;transform:rotate(-90deg)}circle{fill:none;stroke-width:8}.track{stroke:#30333e}.fill{stroke:var(--accent);stroke-linecap:round}.ring strong{position:absolute;inset:0;display:grid;place-content:center;font-size:23px;direction:ltr}.split{height:6px;background:#849bec;border-radius:8px;overflow:hidden;direction:ltr}.split span{display:block;height:100%;background:var(--accent)}dl{margin-bottom:0}dl>div{display:flex;justify-content:space-between;gap:16px;padding:9px 0;border-bottom:1px solid #30323c80}dl>div:last-child{border:0}dd{margin:0;text-align:end;font-variant-numeric:tabular-nums}.links{margin-top:22px}.link-row{display:flex;gap:12px;align-items:center;padding:20px 0;border-bottom:1px solid var(--line)}.link-row:last-child{border:0}.link-row>div{flex:1;min-width:0}.link-row strong{display:block;font-size:14px}.link-row>div>a{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:var(--muted);max-width:100%}a{color:var(--accent);text-decoration:none}button,.download,.file{font:inherit;font-size:13px;border:1px solid #79523a;border-radius:10px;padding:8px 13px;background:transparent;color:var(--accent);cursor:pointer;white-space:nowrap}button{background:var(--accent);color:#23180f;font-weight:650}a:focus-visible,button:focus-visible{outline:2px solid #c8d4ff;outline-offset:4px}.file{display:inline-block;margin:12px 0 0 8px;white-space:normal;overflow-wrap:anywhere}footer{margin-top:24px;font-size:12px;color:var(--muted)}#feedback{min-height:24px;color:var(--accent)}@media(max-width:540px){main{padding:22px 14px}.card,.links{padding:18px}.link-row{flex-wrap:wrap}.link-row>div{flex-basis:100%}.usage{gap:18px}.big{font-size:25px}header{align-items:start;flex-direction:column;gap:10px}}@media(prefers-color-scheme:light){:root{color-scheme:light;--bg:#f6f3ef;--surface:#fff;--line:#e4dfd8;--muted:#686672;--accent:#a4541c}body{color:#28252c}.track{stroke:#ebe5df}.fill{stroke:#da8445}button{background:#f0a86d}.pill{background:#a4541c10}}
+</style></head><body><main><header><div><p class="eyebrow">اشتراک شخصی</p><h1>'''+esc(title)+'''</h1></div><span class="brand" dir="ltr">alirezapanel</span></header><p class="intro muted">جزئیات مصرف و لینک‌های اتصال شما، در یک نگاه.</p><div class="cards">'''+cards+'''</div><section class="links"><h2>اتصال و دریافت کانفیگ</h2><p class="muted">لینک متناسب با برنامهٔ خود را کپی و به اشتراک‌های برنامه اضافه کنید.</p>'''+actions+files+'''<p id="feedback" role="status" aria-live="polite"></p></section><footer>این لینک خصوصی است؛ آن را فقط در اختیار صاحب اشتراک قرار دهید.<br>نمودارها مصرف تجمیعی فعلی سرور را نشان می‌دهند؛ آمار با بازکردن دوبارهٔ صفحه تازه می‌شود. سهمیهٔ هر منبع مستقل است.</footer></main><script>
+document.addEventListener('click',async function(e){const b=e.target.closest('[data-copy]');if(!b)return;const url=new URL(b.dataset.copy,location.href).href;const out=document.getElementById('feedback');try{if(navigator.clipboard&&isSecureContext)await navigator.clipboard.writeText(url);else{const t=document.createElement('textarea');t.value=url;document.body.append(t);t.select();const ok=document.execCommand('copy');t.remove();if(!ok)throw Error();}out.textContent='لینک کپی شد.';}catch(_){out.textContent='کپی خودکار ممکن نشد؛ لینک دریافت را نگه دارید و کپی کنید.';}});
+</script></body></html>'''
+NODE_EMBEDDED_SUBSCRIBER_PY_EOF
+
+cat > "$STAGE/insights.py" <<'NODE_EMBEDDED_INSIGHTS_PY_EOF'
+"""Bounded, on-demand per-user Xray connection diagnostics for super-admins."""
+import asyncio
+import copy
+import json
+import os
+import re
+import stat
+import time
+from pathlib import Path
+import aiohttp
+from aiohttp import web
+
+MANAGED = Path('/var/log/vpn-ui/access.log')
+ROOTS = (Path('/var/log/vpn-ui'), Path('/opt/alirezapanel/vpn/logs'))
+TAIL_BYTES = 512 * 1024
+MAX_ROWS = 200
+
+def allowed_path(value):
+    path = Path(value)
+    if not path.is_absolute(): path = Path('/opt/alirezapanel/vpn') / path
+    resolved = path.resolve()
+    if any(resolved.is_relative_to(root) for root in ROOTS): return resolved
+    raise ValueError('مسیر لاگ سفارشی خارج از پوشه‌های مجاز است؛ از نمایشگر بومی هسته استفاده کنید.')
+
+def tail(path):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd,'rb') as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode): raise ValueError('Log must be a regular file.')
+        offset = max(0,info.st_size-TAIL_BYTES)
+        stream.seek(offset)
+        data = stream.read(TAIL_BYTES)
+        if offset: data = data.partition(b'\n')[2]
+        # A concurrent writer's incomplete last record must never be attributed.
+        data = data.rpartition(b'\n')[0]
+        return data.decode('utf-8',errors='replace').splitlines(), info.st_size > TAIL_BYTES
+
+def read_logs(path, email, outbounds):
+    kinds = {o.get('tag'): o.get('protocol') for o in outbounds if isinstance(o,dict)}
+    rows = []; seen = set(); limited = False; unreadable = False
+    paths = [path, Path(str(path)+'.1')]
+    for name in ('3xipl-ap.log','3xipl-ap.prev.log'):
+        p = ROOTS[0]/name
+        if p not in paths: paths.extend((p,Path(str(p)+'.1')))
+    for p in paths:
+        try: lines,cut = tail(p); limited |= cut
+        except FileNotFoundError: continue
+        except (OSError,ValueError): unreadable = True; continue
+        # At most six 512 KiB slices, no scan from the start and no retained cache.
+        for line in reversed(lines):
+            if len(line) > 4096: continue
+            identity = re.search(r'\bemail:\s*(.*?)\s*$',line)
+            if not identity or identity[1] != email or line in seen: continue
+            seen.add(line)
+            route = re.search(r'\[([^\[\]]{0,300})\]',line)
+            route = route[1] if route else ''
+            tag = re.split(r'\s*(?:->|>>|=>)\s*',route)[-1]
+            event = 'مسدود' if kinds.get(tag) == 'blackhole' else 'مستقیم' if kinds.get(tag) == 'freedom' else 'اتصال'
+            stamp = re.match(r'\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?',line)
+            source = re.search(r'\bfrom\s+(\S+)',line)
+            dest = re.search(r'\b(?:accepted|rejected)\s+(\S+)',line)
+            rows.append({'time':stamp[0] if stamp else '', 'source':source[1] if source else '',
+                         'destination':dest[1] if dest else '', 'route':route, 'event':event})
+            if len(rows) >= MAX_ROWS * 6: limited = True; break
+    rows.sort(key=lambda row:row['time'], reverse=True)
+    return {'rows':rows[:MAX_ROWS], 'limited':limited or len(rows)>MAX_ROWS,
+            'unreadable':unreadable, 'max_rows':MAX_ROWS, 'tail_bytes':TAIL_BYTES}
+
+class Insights:
+    def __init__(self,gateway):
+        self.g = gateway
+        self.pool = asyncio.Semaphore(2)
+
+    async def route(self,request,relative):
+        if relative == '_alireza/insights.js':
+            return web.FileResponse(self.g.root/'insights.js',headers={'Cache-Control':'no-cache'})
+        if not relative.startswith('_alireza/insights/'): return None
+        await self.g.nodes.admin(request)
+        if request.method != 'POST': raise web.HTTPMethodNotAllowed(request.method,['POST'])
+        data = await self.g.nodes.body(request)
+        operation = relative.rsplit('/',1)[-1]
+        if operation == 'configure': return await self.configure(request,data)
+        if operation != 'read': raise web.HTTPNotFound()
+        email = data.get('email')
+        if not isinstance(email,str) or not email or len(email)>254 or any(ord(c)<32 for c in email):
+            raise web.HTTPBadRequest(text='شناسهٔ دقیق یک کلاینت ذخیره‌شده را انتخاب کنید.')
+        try: await asyncio.wait_for(self.pool.acquire(),timeout=2)
+        except asyncio.TimeoutError: raise web.HTTPTooManyRequests(text='نمایشگر مشغول است؛ دوباره تلاش کنید.')
+        try:
+            config,_ = await self.g.features.configuration(request)
+            value = config.get('log',{}).get('access','none')
+            enabled = bool(value and value != 'none')
+            try: path = allowed_path(value) if enabled else MANAGED
+            except ValueError as exc: raise web.HTTPConflict(text=str(exc))
+            result = await asyncio.to_thread(read_logs,path,email,config.get('outbounds',[]))
+            result.update({'enabled':enabled, 'managed':path==MANAGED, 'email':email, 'log_version':1})
+            return web.json_response(result,headers={'Cache-Control':'no-store'})
+        finally: self.pool.release()
+
+    async def configure(self,request,data):
+        enabled = data.get('enabled')
+        if type(enabled) is not bool: raise web.HTTPBadRequest(text='enabled must be boolean.')
+        f = self.g.features
+        async with f.lock:
+            original,test_url = await f.configuration(request)
+            current = original.get('log',{}).get('access','none')
+            if current not in ('',None,'none',str(MANAGED)):
+                raise web.HTTPConflict(text='ثبت لاگ سفارشی فعال است؛ تغییر آن از تنظیمات بومی هسته انجام می‌شود.')
+            updated = copy.deepcopy(original)
+            updated.setdefault('log',{})['access'] = str(MANAGED) if enabled else 'none'
+            if updated != original:
+                latest,_ = await f.configuration(request)
+                if latest != original: raise web.HTTPConflict(text='تنظیمات هم‌زمان تغییر کرد؛ دوباره تلاش کنید.')
+                self.g.nodes.state['logging_backup'] = {'time':int(time.time()),'config':original}
+                self.g.nodes.save()
+                await f.native(request,'POST','panel/xray/update',{'xraySetting':json.dumps(updated),'outboundTestUrl':test_url})
+                try:
+                    await f.native(request,'POST','panel/api/server/restartXrayService')
+                except (web.HTTPException,aiohttp.ClientError,asyncio.TimeoutError):
+                    latest,_ = await f.configuration(request)
+                    if latest != updated: raise web.HTTPConflict(text='تنظیمات دیگری ثبت شده؛ نسخهٔ بازیابی لاگ نگه داشته شد.')
+                    await f.native(request,'POST','panel/xray/update',{'xraySetting':json.dumps(original),'outboundTestUrl':test_url})
+                    await f.native(request,'POST','panel/api/server/restartXrayService')
+                    raise web.HTTPBadGateway(text='راه‌اندازی لاگ ناموفق بود؛ تنظیمات قبلی بازیابی شد.')
+        return web.json_response({'success':True,'enabled':enabled,'log_version':1},headers={'Cache-Control':'no-store'})
+NODE_EMBEDDED_INSIGHTS_PY_EOF
+
+cat > "$STAGE/insights.js" <<'NODE_EMBEDDED_INSIGHTS_JS_EOF'
+/* Recent diagnostics are fetched only when opened/refreshed. No polling. */
+(()=>{'use strict';
+const cfg=window.ALIREZA;
+if(!cfg||cfg.dns||typeof PERMS==='undefined'||!PERMS.superAdmin)return;
+const base=cfg.mount||cfg.base;
+const node=(tag,text)=>{const el=document.createElement(tag);if(text)el.textContent=text;return el;};
+async function api(op,data){const r=await fetch(base+'_alireza/insights/'+op,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-Alirezapanel-Request':'1'},body:JSON.stringify(data)});if(!r.ok)throw Error((await r.text()).slice(0,350));const result=await r.json();if(result.log_version!==1)throw Error('این نود باید با install.sh --repair به‌روزرسانی شود.');return result;}
+async function show(email){
+ const d=node('dialog');d.className='alireza-policy-dialog alireza-log-dialog';d.dir='rtl';
+ const title=node('h3','لاگ اتصال کاربر');title.id='alireza-log-title';d.setAttribute('aria-labelledby',title.id);
+ const who=node('p',email);who.dir='auto';who.className='alireza-log-who';
+ const hint=node('p','رویدادهای اخیر Xray با شناسهٔ دقیق همین کاربر؛ شامل زمان، مبدأ و مقصد اتصال. محتوای پیام‌ها ثبت نمی‌شود. هسته‌ها یا پروتکل‌هایی که شناسهٔ کاربر را در لاگ نمی‌نویسند در این فهرست دیده نمی‌شوند.');
+ const status=node('p');status.setAttribute('role','status');const wrap=node('div');wrap.className='alireza-log-scroll';
+ const refresh=node('button','تازه‌سازی');const toggle=node('button');toggle.hidden=true;const close=node('button','بستن');close.onclick=()=>d.close();
+ let enabled=false;
+ const read=async()=>{refresh.disabled=true;toggle.disabled=true;wrap.replaceChildren();status.textContent='در حال خواندن آخرین رویدادها…';try{
+  const result=await api('read',{email});if(!d.isConnected)return;enabled=result.enabled;toggle.hidden=enabled&&!result.managed;toggle.textContent=enabled?'توقف ثبت لاگ این سرور':'فعال‌سازی ثبت لاگ این سرور';
+  status.textContent=(enabled?'ثبت لاگ فعال است. ':'ثبت لاگ خاموش است؛ رویداد جدیدی ثبت نمی‌شود. ')+(result.rows.length?result.rows.length+' رویداد اخیر. ':'رویدادی برای این کاربر در بخش اخیر فایل‌ها پیدا نشد. ')+(result.limited?'فقط بخش پایانی فایل‌ها خوانده شد. ':'')+(result.unreadable?'بعضی فایل‌ها قابل خواندن نیستند؛ دسترسی فایل‌ها را با --repair بررسی کنید. ':'');
+  if(result.rows.length){const table=node('table');const head=node('thead');const tr=node('tr');for(const name of ['زمان سرور','مبدأ','مقصد','مسیر','رویداد'])tr.append(node('th',name));head.append(tr);table.append(head);const body=node('tbody');for(const row of result.rows){const tr=node('tr');for(const key of ['time','source','destination','route','event']){const td=node('td',row[key]||'—');td.dir='auto';tr.append(td);}body.append(tr);}table.append(body);wrap.append(table);}
+ }catch(e){status.textContent=e.message;toggle.hidden=true;}finally{refresh.disabled=false;toggle.disabled=false;}};
+ toggle.onclick=async()=>{if(!confirm((enabled?'ثبت لاگ جدید برای همهٔ کاربران این سرور متوقف شود؟ محدودیت IP وابسته به لاگ ممکن است از کار بیفتد.':'ثبت لاگ اتصال برای همهٔ کاربران Xray این سرور فعال شود؟ تاریخچهٔ پیش از فعال‌سازی قابل بازسازی نیست. فایل‌ها به‌صورت دوره‌ای چرخش دارند.')+' اعمال این تغییر هسته را بازراه‌اندازی می‌کند و ممکن است اتصال‌ها لحظه‌ای قطع شوند.'))return;toggle.disabled=true;refresh.disabled=true;try{await api('configure',{enabled:!enabled});await read();}catch(e){status.textContent=e.message;}finally{toggle.disabled=false;refresh.disabled=false;}};
+ refresh.onclick=read;
+ d.append(title,who,hint,status,wrap,refresh,toggle,close,node('p','برای سبک‌ماندن پنل حداکثر ۲۰۰ رویداد از انتهای فایل‌های اخیر خوانده می‌شود؛ این بخش آرشیو کامل یا گزارش تضمینی همهٔ اتصال‌ها نیست.'));
+ d.addEventListener('close',()=>d.remove());document.body.append(d);d.showModal();await read();
+}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-alireza-user-logs]');if(!b)return;e.preventDefault();if(b.dataset.email)show(b.dataset.email);});
+})();
+NODE_EMBEDDED_INSIGHTS_JS_EOF
 
 cat > "$STAGE/dns_clients.py" <<'NODE_EMBEDDED_DNS_CLIENTS_PY_EOF'
 """Managed DoH clients: bounded relay, durable quotas, native AdGuard policies.
@@ -4161,36 +4506,6 @@ class Features:
                 'mode': self.g.config.get('tls_mode', 'ip'),
                 'expires': cert['notAfter'], 'cert': self.g.config['tls_cert'],
                 'key': self.g.config['tls_key']}, headers={'Cache-Control':'no-store'})
-        if operation == 'client-usage' and request.method == 'POST':
-            data = await self.g.nodes.body(request)
-            email = data.get('email')
-            if not isinstance(email, str) or not email or len(email) > 254:
-                raise web.HTTPBadRequest(text='شناسه / ایمیل کلاینت را وارد کن.')
-            uri = Path(self.g.config['vpn_db']).resolve().as_uri()+'?mode=ro'
-            rows=[]
-            with contextlib.closing(sqlite3.connect(uri,uri=True,timeout=2)) as db:
-                db.row_factory=sqlite3.Row
-                tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                if 'client_traffics' in tables:
-                    cols={r[1] for r in db.execute('PRAGMA table_info(client_traffics)')}
-                    wanted=[c for c in ('id','inbound_id','enable','email','up','down','expiry_time','total','reset') if c in cols]
-                    if 'email' in cols:
-                        q='SELECT '+','.join(wanted)+' FROM client_traffics WHERE email=? ORDER BY '+('inbound_id' if 'inbound_id' in cols else 'email')
-                        rows=[dict(r) for r in db.execute(q,(email,))]
-            inbounds = await self.native(request, 'GET', 'panel/api/inbounds/list')
-            memberships=[]; client_meta=[]
-            for inbound in inbounds or []:
-                settings=inbound.get('settings') or '{}'; settings=json.loads(settings) if isinstance(settings,str) else settings
-                for c in settings.get('clients',[]):
-                    if c.get('email')==email:
-                        memberships.append({'id':inbound.get('id'),'remark':inbound.get('remark') or ('Inbound '+str(inbound.get('id'))),'protocol':inbound.get('protocol')})
-                        client_meta.append({k:c.get(k) for k in ('email','enable','expiryTime','totalGB','subId','limitIp') if k in c})
-            if not memberships and not rows: raise web.HTTPNotFound(text='کلاینت پیدا نشد.')
-            up=sum(max(0,int(r.get('up') or 0)) for r in rows); down=sum(max(0,int(r.get('down') or 0)) for r in rows)
-            limit=max([int(r.get('total') or 0) for r in rows]+[int(c.get('totalGB') or 0) for c in client_meta]+[0])
-            expiry=max([int(r.get('expiry_time') or 0) for r in rows]+[int(c.get('expiryTime') or 0) for c in client_meta]+[0])
-            return web.json_response({'success':True,'source':'vpn-ui native client_traffics','email':email,'up':up,'down':down,'used':up+down,
-                'total':limit,'expiry':expiry,'memberships':memberships,'records':rows,'clients':client_meta},headers={'Cache-Control':'no-store'})
         if operation != 'policy' or request.method != 'POST':
             raise web.HTTPNotFound()
         data = await self.g.nodes.body(request)
@@ -4376,9 +4691,6 @@ cat > "$STAGE/features.js" <<'NODE_EMBEDDED_FEATURES_JS_EOF'
     }
     return response;
   });
-  const fmt=n=>{n=Number(n||0);const u=['B','KB','MB','GB','TB'];let i=0;while(n>=1024&&i<u.length-1){n/=1024;i++;}return (n<10&&i?n.toFixed(2):n<100&&i?n.toFixed(1):Math.round(n))+' '+u[i];};
-  async function usageDialog(){const d=node('dialog');d.className='alireza-usage-dialog';d.dir='rtl';const q=node('input');q.placeholder='شناسه / ایمیل کلاینت';q.dir='ltr';const go=node('button','نمایش گزارش');const close=node('button','بستن');close.onclick=()=>d.close();const out=node('div');d.append(node('h3','گزارش واقعی مصرف هر کاربر'),q,go,out,close);document.body.append(d);d.addEventListener('close',()=>d.remove());d.showModal();go.onclick=async()=>{go.disabled=true;out.textContent='در حال خواندن شمارنده‌های واقعی vpn-ui…';try{const x=await api('client-usage',{email:q.value.trim()});out.textContent='';const cards=node('div');cards.className='alireza-stat-grid';for(const [a,b] of [['دانلود',fmt(x.down)],['آپلود',fmt(x.up)],['مصرف کل',fmt(x.used)],['سقف',x.total?fmt(x.total):'نامحدود']]){const c=node('section');c.append(node('small',a),node('strong',b));cards.append(c);}out.append(cards);const max=Math.max(x.down,x.up,1),chart=node('div');chart.className='alireza-bars';for(const [label,val] of [['دانلود',x.down],['آپلود',x.up]]){const r=node('div'),track=node('i'),fill=node('b');fill.style.width=(val/max*100).toFixed(1)+'%';track.append(fill);r.append(node('span',label+' · '+fmt(val)),track);chart.append(r);}out.append(chart,node('p','منبع: جدول native client_traffics خود vpn-ui؛ عدد ساختگی یا packet capture اضافه وجود ندارد.'));const list=node('div');list.className='alireza-log-list';for(const r of x.records||[]){const row=node('div');row.append(node('strong','Inbound '+(r.inbound_id??'—')),node('span','↓ '+fmt(r.down)+'  ↑ '+fmt(r.up)),node('span',r.enable===false?'غیرفعال':'فعال'));list.append(row);}out.append(list);}catch(e){out.textContent=e.message;}finally{go.disabled=false;}};}
-  async function subStudio(){const d=node('dialog');d.className='alireza-sub-dialog';d.dir='rtl';const q=node('input');q.placeholder='شناسه / ایمیل کلاینت';q.dir='ltr';const go=node('button','ساخت نمای اشتراک'),body=node('div'),close=node('button','بستن');close.onclick=()=>d.close();d.append(node('h3','Subscription Studio'),node('p','نمای حرفه‌ای اشتراک و مصرف، بدون تغییر فرمت native subscription.'),q,go,body,close);document.body.append(d);d.addEventListener('close',()=>d.remove());d.showModal();go.onclick=async()=>{go.disabled=true;body.textContent='در حال آماده‌سازی…';try{const x=await api('client-usage',{email:q.value.trim()});body.textContent='';const hero=node('section');hero.className='alireza-sub-hero';hero.append(node('small','ALIREZAPANEL SUBSCRIPTION'),node('h2',x.email),node('p',x.expiry?'اعتبار تا '+new Date(x.expiry).toLocaleDateString('fa-IR'):'بدون تاریخ انقضای ثبت‌شده'));body.append(hero);const pct=x.total?Math.min(100,x.used/x.total*100):0,ring=node('div');ring.className='alireza-ring';ring.style.setProperty('--p',pct.toFixed(1));ring.innerHTML='<div><strong>'+(x.total?pct.toFixed(1)+'٪':'∞')+'</strong><small>مصرف</small></div>';body.append(ring);const stats=node('div');stats.className='alireza-stat-grid';for(const [a,b] of [['مصرف',fmt(x.used)],['باقی‌مانده',x.total?fmt(Math.max(0,x.total-x.used)):'نامحدود'],['دانلود',fmt(x.down)],['آپلود',fmt(x.up)]]){const c=node('section');c.append(node('small',a),node('strong',b));stats.append(c);}body.append(stats);const ids=[...new Set((x.clients||[]).map(c=>c.subId).filter(Boolean))];if(ids.length){const box=node('section');box.className='alireza-sub-links';box.append(node('h4','شناسه‌های Subscription'));for(const id of ids){const line=node('div'),code=node('code',id),cp=node('button','کپی');cp.onclick=()=>navigator.clipboard.writeText(id).then(()=>message('کپی شد'));line.append(code,cp);box.append(line);}body.append(box);}}catch(e){body.textContent=e.message;}finally{go.disabled=false;}};}
   if(!/\/panel\/(clients|inbounds|core)\/?$/.test(location.pathname))return;
   const main=document.querySelector('.bo-content');if(!main)return;
   const bar=node('div');bar.className='alireza-client-tools';
@@ -4386,8 +4698,7 @@ cat > "$STAGE/features.js" <<'NODE_EMBEDDED_FEATURES_JS_EOF'
   const tls=node('button','گواهی و اتصال');tls.type='button';tls.onclick=async()=>{tls.disabled=true;try{
     const d=await api('tls');alert('alirezapanel\n'+d.host+'\n'+(d.enabled?'HTTPS':'HTTP')+' · '+d.mode+'\nانقضا: '+d.expires+'\nدر فرم TLS اینباند، گواهی alirezapanel را انتخاب کن. دامنه/SNI باید با گواهی مطابقت داشته باشد.\nمدیریت از ترمینال: sudo alirezapanel ssl');
   }catch(e){message(e.message,true);}finally{tls.disabled=false;}};
-  const usage=node('button','لاگ / مصرف کاربر');usage.type='button';usage.onclick=usageDialog;const sub=node('button','Subscription Studio');sub.type='button';sub.onclick=subStudio;
-  const dns=node('a','مدیریت DNS');dns.href=cfg.base+'panel/dns';bar.append(policy,usage,sub,tls,dns);main.prepend(bar);
+  const dns=node('a','مدیریت DNS');dns.href=cfg.base+'panel/dns';bar.append(policy,tls,dns);main.prepend(bar);
 })();
 NODE_EMBEDDED_FEATURES_JS_EOF
 
@@ -4697,7 +5008,7 @@ if __name__=='__main__':
 NODE_EMBEDDED_TLS_PY_EOF
 
 say 'Checking the embedded integration code before changing services.'
-python3 -m py_compile "$STAGE/gateway.py" "$STAGE/manage.py" "$STAGE/nodes.py" "$STAGE/features.py" "$STAGE/tls.py" "$STAGE/dns_clients.py"
+python3 -m py_compile "$STAGE/gateway.py" "$STAGE/manage.py" "$STAGE/nodes.py" "$STAGE/features.py" "$STAGE/tls.py" "$STAGE/dns_clients.py" "$STAGE/subscriber.py" "$STAGE/insights.py"
 python3 -c 'import aiohttp, yaml, bcrypt; print("Runtime dependencies OK")'
 if [[ -f "$ETC/owner" ]]; then
     say 'Backing up the existing installation before repair (services pause briefly).'
@@ -4720,7 +5031,7 @@ install -d -o root -g root -m 700 "$ROOT/adguard"
 printf 'alirezapanel installer v1\n' > "$ETC/owner"
 install -m 755 "$STAGE/vpn-ui-amd64" "$ROOT/vpn/vpn-ui-amd64"
 install -m 755 "$STAGE/AdGuardHome/AdGuardHome" "$ROOT/adguard/AdGuardHome"
-for filename in gateway.py brand.js theme.css manage.py logo.svg nodes.py nodes.js nodes.html features.py features.js tls.py dns_clients.py dns_clients.js; do
+for filename in gateway.py brand.js theme.css manage.py logo.svg nodes.py nodes.js nodes.html features.py features.js tls.py dns_clients.py dns_clients.js subscriber.py insights.py insights.js; do
     install -o root -g alirezapanel -m 640 "$STAGE/$filename" "$ROOT/gateway/$filename"
 done
 install -m 644 "$STAGE/README.txt" "$ROOT/README.txt"
@@ -4966,11 +5277,54 @@ if [[ -f "$ETC/acme.json" ]]; then
     python3 "$ROOT/gateway/tls.py" adopt --result "$ETC/acme.json"
 fi
 
+install -d -o root -g alirezapanel -m 750 /var/log/vpn-ui
+for log_name in access.log 3xipl-ap.log 3xipl-ap.prev.log; do
+    if [[ ! -e /var/log/vpn-ui/$log_name && ! -L /var/log/vpn-ui/$log_name ]]; then
+        install -o root -g alirezapanel -m 640 /dev/null "/var/log/vpn-ui/$log_name"
+    elif [[ -f /var/log/vpn-ui/$log_name && ! -L /var/log/vpn-ui/$log_name ]]; then
+        chown root:alirezapanel "/var/log/vpn-ui/$log_name"
+        chmod 640 "/var/log/vpn-ui/$log_name"
+    fi
+done
+install -d -o root -g root -m 755 /var/lib/logrotate
+cat > "$ETC/access-logrotate.conf" <<'ACCESS_ROTATION'
+/var/log/vpn-ui/access.log /var/log/vpn-ui/3xipl-ap.log /var/log/vpn-ui/3xipl-ap.prev.log {
+    size 4M
+    rotate 1
+    missingok
+    notifempty
+    copytruncate
+    nocompress
+    su root alirezapanel
+}
+ACCESS_ROTATION
+cat > /etc/systemd/system/alirezapanel-access-log.service <<'ACCESS_UNIT'
+[Unit]
+Description=Bound recent alirezapanel connection logs
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/logrotate --state /var/lib/logrotate/alirezapanel-access.status /etc/alirezapanel/access-logrotate.conf
+Nice=15
+IOSchedulingClass=idle
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+ACCESS_UNIT
+cat > /etc/systemd/system/alirezapanel-access-log.timer <<'ACCESS_TIMER'
+[Unit]
+Description=Check alirezapanel connection log size every five minutes
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+AccuracySec=30s
+[Install]
+WantedBy=timers.target
+ACCESS_TIMER
 systemctl daemon-reload
 systemd-analyze verify /etc/systemd/system/alirezapanel.service \
     /etc/systemd/system/alirezapanel-vpn.service /etc/systemd/system/alirezapanel-dns.service
 say 'Starting both services and the integrated HTTPS interface.'
-systemctl enable --now alirezapanel-dns alirezapanel-vpn alirezapanel
+systemctl enable --now alirezapanel-dns alirezapanel-vpn alirezapanel alirezapanel-access-log.timer
 REPAIR_STOPPED=0
 ready=0
 for ((attempt=0; attempt<120; attempt++)); do
@@ -4996,7 +5350,7 @@ for ((attempt=0; attempt<12; attempt++)); do
 done
 cat "$STAGE/health.log"
 (( health )) || die 'A health check failed. The installation is preserved; see alirezapanel logs.'
-printf 'integration=1.4.0\nvpn=%s\nadguard=%s\n' "$VPN_VERSION" "$AGH_VERSION" > "$ETC/installed"
+printf 'integration=1.5.0\nvpn=%s\nadguard=%s\n' "$VPN_VERSION" "$AGH_VERSION" > "$ETC/installed"
 say 'Installation and automated health checks completed.'
 python3 "$ROOT/gateway/manage.py" info
 printf '\nTo display your initial login: sudo alirezapanel credentials\n'
