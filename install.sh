@@ -523,7 +523,7 @@ class Gateway:
         if not agh:
             text = self.fix_restart_html(text)
             text = text.replace('<a-input v-model.trim="client.email"></a-input>', '<a-input v-model.trim="client.email"></a-input><button type="button" class="alireza-policy-button" data-alireza-policy :data-email="client.email">فیلتر / گیمینگ</button>')
-            text = text.replace('="showAccountInfo(row)"></a-button>', '="showAccountInfo(row)"></a-button><button type="button" class="alireza-user-logs" data-alireza-user-logs :data-email="row.email">لاگ</button>')
+            text = text.replace('@click="showAccountInfo(row)"></a-button>', '@click="showAccountInfo(row)"></a-button><button type="button" class="alireza-user-logs" data-alireza-user-logs :data-email="row.email">لاگ</button>')
             text = text.replace('data-alireza-policy :data-email="client.email">فیلتر / گیمینگ</button>', 'data-alireza-policy :data-email="client.email">فیلتر / گیمینگ</button><button type="button" class="alireza-user-logs" data-alireza-user-logs :data-email="client.email">لاگ اتصال</button>')
         # Don't replace arbitrary JavaScript/JSON identifiers, protocol names,
         # URLs, user configuration or legal attribution. Branding is DOM-only.
@@ -533,9 +533,9 @@ class Gateway:
         # The stylesheet loads after the upstream styles. Mark the document before
         # first paint; don't override saved user theme choices on every visit.
         tag = ('<link rel="stylesheet" href="' + html.escape(base, quote=True) +
-               '_alireza/theme.css?v=2.7.0"><script>document.documentElement.setAttribute("data-alireza-theme","ember");'
+               '_alireza/theme.css?v=2.4.0"><script>document.documentElement.setAttribute("data-alireza-theme","ember");'
                'window.ALIREZA=' + opts + ';</script><script defer src="' +
-               html.escape(base, quote=True) + '_alireza/brand.js?v=2.7.0"></script>')
+               html.escape(base, quote=True) + '_alireza/brand.js?v=1.1.0"></script>')
         if not agh:
             tag += '<script defer src="' + html.escape(base, quote=True) + '_alireza/nodes.js?v=1.0.0"></script>'
         if not agh:
@@ -1315,7 +1315,7 @@ html[data-alireza-theme="ember"] :is(.ant-btn,.bo-rail-item,.bo-tile,.ant-card,.
 html[data-alireza-theme="ember"] :is(.ant-btn,.ap-dns button,.alireza-policy-button,.alireza-user-logs):not(:disabled):active{transform:translateY(1px) scale(.985)}
 html[data-alireza-theme="ember"] :is(.ant-btn-primary,.ap-primary):not(:disabled):hover{box-shadow:0 0 0 3px var(--ap-ring),0 8px 24px rgba(0,0,0,.16);transform:translateY(-1px)}
 html[data-alireza-theme="ember"] :is(.bo-tile,.ant-card):hover{transform:translateY(-1px);box-shadow:0 10px 30px rgba(0,0,0,.16)}
-@media (prefers-reduced-motion:reduce){html[data-alireza-theme="ember"] *{transition:none!important;animation:none!important}}
+@media(prefers-reduced-motion:reduce){html[data-alireza-theme="ember"] *{transition:none!important;animation:none!important}}
 
 /* Forms, dialogs and tables are deliberately scoped to native components. */
 html[data-alireza-theme="ember"] :is(.ant-input,.ant-input-number,.ant-select-selection,.ant-select-dropdown,
@@ -1400,13 +1400,13 @@ html[data-alireza-theme="ember"] #root :is(.custom-control-input:checked~.custom
 html[data-alireza-theme="ember"] #root input { accent-color:var(--ap-orange); }
 html[data-alireza-theme="ember"] #root .footer { background:var(--ap-bg); border-color:var(--ap-border); color:var(--ap-muted); }
 html[data-alireza-theme="ember"] #alireza-dns { background:var(--ap-bg); height:calc(100dvh - 68px)!important; }
- (max-width:600px) {
+@media (max-width:600px) {
   html[data-alireza-theme="ember"] .bo-topbar-inner { min-height:58px; padding-inline:14px; }
   html[data-alireza-theme="ember"] .bo-topbar-title { font-size:16px; }
   html[data-alireza-theme="ember"] #root .card { border-radius:12px; }
   html[data-alireza-theme="ember"] #alireza-dns { height:calc(100dvh - 60px)!important; min-height:400px!important; }
 }
- (prefers-reduced-motion:reduce) {
+@media (prefers-reduced-motion:reduce) {
   html[data-alireza-theme="ember"] :is(.bo-rail-item,.ant-btn,.btn,.lgt-rise) { transition:none!important; animation:none!important; }
 }
 
@@ -1425,7 +1425,7 @@ html[data-alireza-theme="ember"] #alireza-dns { background:var(--ap-bg); height:
 [data-alireza-clients] .ant-table-tbody>tr>td{padding-block:15px}
 [data-alireza-clients] .ant-input,[data-alireza-clients] .ant-select-selection,[data-alireza-clients] .ant-btn{border-radius:8px}
 [data-alireza-clients] .ant-table-wrapper{border-radius:12px;overflow:hidden}
-@media (prefers-reduced-motion:reduce){[data-alireza-clients] *{transition:none!important;animation:none!important}}
+@media(prefers-reduced-motion:reduce){[data-alireza-clients] *{transition:none!important;animation:none!important}}
 
 /* 1.3: DNS console and client refinements. Static surfaces; no dashboard changes. */
 .ap-dns{font:14px/1.75 system-ui,sans-serif;color:var(--ap-text);max-width:1440px;margin-inline:auto}
@@ -1472,7 +1472,7 @@ html[data-alireza-theme="ember"] #alireza-dns { background:var(--ap-bg); height:
 [data-alireza-clients] .ant-tag{border-radius:6px;font-size:11px}
 [data-alireza-clients] .ant-progress-inner{height:5px}
 [data-alireza-clients] .alireza-client-tools{padding:12px 16px;background:var(--ap-surface);border:1px solid var(--ap-border);border-radius:12px}
-(max-width:760px){.ap-dns-heading{align-items:flex-start;flex-direction:column}.ap-dns-heading>button{width:100%}.ap-dns h2{font-size:21px}.ap-dns-stats{grid-template-columns:1fr 1fr;gap:8px}.ap-dns-stats>div{padding:14px}.ap-dns-dialog{padding:18px}.ap-dns-form-grid{grid-template-columns:1fr}.ap-dns-pager{justify-content:center}}
+@media(max-width:760px){.ap-dns-heading{align-items:flex-start;flex-direction:column}.ap-dns-heading>button{width:100%}.ap-dns h2{font-size:21px}.ap-dns-stats{grid-template-columns:1fr 1fr;gap:8px}.ap-dns-stats>div{padding:14px}.ap-dns-dialog{padding:18px}.ap-dns-form-grid{grid-template-columns:1fr}.ap-dns-pager{justify-content:center}}
 
 /* 1.4: scoped controls only, no idle work. */
 .alireza-policy-dialog{max-height:88dvh;overflow:auto;background:var(--ap-surface);color:var(--ap-text)}
@@ -1500,84 +1500,7 @@ html[data-alireza-theme="ember"] #alireza-dns { background:var(--ap-bg); height:
 .bo-content .ant-btn:hover{transform:translateY(-1px);box-shadow:0 7px 22px rgba(49,190,255,.12)}
 .ap-dns-quick{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:10px 0 16px;padding:10px;border:1px solid var(--ap-border,#273248);border-radius:12px;background:rgba(30,90,130,.06)}
 .ap-dns-quick>span{font-size:12px;opacity:.72;margin-inline-end:3px}
-@media (prefers-reduced-motion:reduce){.bo-content .ant-btn{transition:none!important}.bo-content .ant-btn:hover{transform:none!important}}
-
-
-/* 2.7 UI refinement — presentation only. Dashboard structure and protocol logic untouched. */
-@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap');
-html[data-alireza-theme="ember"],html[data-alireza-theme="ember"] body,
-html[data-alireza-theme="ember"] button,html[data-alireza-theme="ember"] input,
-html[data-alireza-theme="ember"] textarea,html[data-alireza-theme="ember"] select,
-html[data-alireza-theme="ember"] table,html[data-alireza-theme="ember"] dialog,
-html[data-alireza-theme="ember"] .ant-btn,html[data-alireza-theme="ember"] .ant-input,
-html[data-alireza-theme="ember"] .ant-select,html[data-alireza-theme="ember"] .ant-modal,
-html[data-alireza-theme="ember"] .ant-table,html[data-alireza-theme="ember"] #root,
-html[data-alireza-theme="ember"] .ap-dns,html[data-alireza-theme="ember"] .alireza-policy-dialog{
-  font-family:"Vazirmatn","Tahoma","Arial",sans-serif!important;
-}
-html[data-alireza-theme="ember"] body{font-size:13px;line-height:1.65}
-html[data-alireza-theme="ember"] [dir="rtl"]{text-align:start}
-html[data-alireza-theme="ember"] [dir="ltr"]{text-align:start}
-html[data-alireza-theme="ember"] :is(.ant-input,.ant-input-number,.ant-select-selection,textarea,input,select){min-height:36px}
-html[data-alireza-theme="ember"] :is(.ant-btn,.ap-dns button,.alireza-policy-button,.alireza-user-logs){min-height:34px;padding-inline:13px;font-weight:600}
-html[data-alireza-theme="ember"] :is(.ant-modal-content,.ant-popover-inner,.ant-dropdown-menu,.ant-select-dropdown){box-shadow:0 18px 55px rgba(0,0,0,.28)!important}
-html[data-alireza-theme="ember"] .ant-modal-content{border:1px solid var(--ap-border);border-radius:18px!important;overflow:hidden}
-html[data-alireza-theme="ember"] .ant-modal-header{padding:16px 20px!important}
-html[data-alireza-theme="ember"] .ant-modal-body{padding:18px 20px!important}
-html[data-alireza-theme="ember"] .ant-modal-footer{padding:12px 20px!important}
-html[data-alireza-theme="ember"] .ant-form-item{margin-bottom:16px}
-html[data-alireza-theme="ember"] .ant-form-item-label{line-height:1.5;padding-bottom:6px}
-html[data-alireza-theme="ember"] .ant-table{font-variant-numeric:tabular-nums}
-html[data-alireza-theme="ember"] .ant-table-thead>tr>th{padding:11px 13px!important;font-size:11.5px;font-weight:700!important;white-space:nowrap}
-html[data-alireza-theme="ember"] .ant-table-tbody>tr>td{padding:11px 13px!important;vertical-align:middle}
-html[data-alireza-theme="ember"] .ant-tag{border-radius:999px;padding-inline:8px;font-weight:600}
-html[data-alireza-theme="ember"] .ant-alert{border-radius:12px;border-width:1px}
-html[data-alireza-theme="ember"] .ant-tabs-bar{margin-bottom:18px}
-html[data-alireza-theme="ember"] .ant-tabs-tab{padding:9px 12px!important}
-html[data-alireza-theme="ember"] .ant-switch{min-width:38px}
-html[data-alireza-theme="ember"] .bo-content{padding-inline:clamp(12px,2vw,28px);padding-bottom:28px}
-html[data-alireza-theme="ember"] .bo-content>:first-child{margin-top:0}
-html[data-alireza-theme="ember"] .bo-rail-item{min-height:42px;display:flex;align-items:center}
-html[data-alireza-theme="ember"] .bo-topbar{position:sticky;top:0;z-index:20;backdrop-filter:none}
-
-/* First-class UI for alirezapanel-only features (policy/gaming/logs). */
-.alireza-policy-dialog{width:min(620px,calc(100vw - 24px));box-sizing:border-box;padding:0!important;border:1px solid var(--ap-border)!important;border-radius:20px!important;background:var(--ap-surface)!important;box-shadow:0 28px 90px rgba(0,0,0,.45)!important;color:var(--ap-text)!important}
-.alireza-policy-dialog>h3{margin:0;padding:20px 22px 14px;border-bottom:1px solid var(--ap-border);font-size:18px;font-weight:800;letter-spacing:-.25px}
-.alireza-policy-dialog>input,.alireza-policy-dialog>textarea,.alireza-policy-dialog>label,.alireza-policy-dialog>p,.alireza-policy-dialog>.alireza-game-box{margin-inline:22px!important;width:calc(100% - 44px)!important;box-sizing:border-box}
-.alireza-policy-dialog>input{margin-top:18px!important;height:40px!important;background:var(--ap-bg)!important;border:1px solid var(--ap-border)!important;color:var(--ap-text)!important;border-radius:10px!important;padding:8px 12px!important}
-.alireza-policy-dialog>p{color:var(--ap-muted);font-size:12px;line-height:1.8;margin-top:10px;margin-bottom:14px}
-.alireza-policy-dialog>label{display:flex!important;align-items:center;gap:10px;margin-top:0!important;margin-bottom:7px!important;padding:10px 12px;border:1px solid var(--ap-border);border-radius:11px;background:var(--ap-bg);cursor:pointer;transition:border-color .14s ease,background-color .14s ease}
-.alireza-policy-dialog>label:hover{border-color:color-mix(in srgb,var(--ap-orange) 55%,var(--ap-border));background:var(--ap-raised)}
-.alireza-policy-dialog>label input[type="checkbox"]{margin:0!important;width:17px;height:17px;min-height:0;accent-color:var(--ap-orange);flex:0 0 auto}
-.alireza-policy-dialog>label textarea{display:block;margin-top:8px;width:100%;min-height:82px;box-sizing:border-box}
-.alireza-policy-dialog>.alireza-game-box{position:relative;margin-top:14px!important;margin-bottom:14px!important;padding:15px!important;border:1px solid color-mix(in srgb,var(--ap-orange) 28%,var(--ap-border));border-radius:14px;background:linear-gradient(135deg,var(--ap-orange-soft),transparent 72%)}
-.alireza-game-box button{width:100%;margin:0!important;display:flex;justify-content:center;align-items:center;min-height:40px;border-radius:10px!important;font-weight:800!important}
-.alireza-game-box button[aria-pressed="true"]{background:var(--ap-orange)!important;border-color:var(--ap-orange)!important;color:var(--ap-on-orange)!important;box-shadow:0 0 0 3px var(--ap-ring)}
-.alireza-game-box p{margin:10px 0 0!important;font-size:11.5px!important;line-height:1.8}
-.alireza-policy-dialog>button{margin:8px 0 18px 8px!important;min-height:38px!important;border-radius:10px!important}
-.alireza-policy-dialog>button:not(:last-child){margin-inline-start:22px!important;background:var(--ap-orange)!important;border-color:var(--ap-orange)!important;color:var(--ap-on-orange)!important;font-weight:800}
-.alireza-policy-dialog>button:last-child{background:var(--ap-raised)!important;border-color:var(--ap-border)!important;color:var(--ap-text)!important}
-.alireza-policy-dialog>p[role="status"]:not(:empty){padding:10px 12px;border:1px solid var(--ap-border);border-inline-start:3px solid var(--ap-orange);border-radius:10px;background:var(--ap-orange-soft);color:var(--ap-text)}
-.alireza-user-logs,[data-alireza-admin] .alireza-policy-button{vertical-align:middle;margin-inline:4px!important;margin-top:4px!important;border-radius:9px!important;background:var(--ap-raised)!important;border-color:var(--ap-border)!important;color:var(--ap-text)!important}
-[data-alireza-admin] .alireza-policy-button:hover,.alireza-user-logs:hover{border-color:var(--ap-orange)!important;color:var(--ap-orange)!important;background:var(--ap-orange-soft)!important}
-.alireza-log-dialog{width:min(980px,calc(100vw - 24px))!important}
-.alireza-log-scroll{margin:0 22px 14px;border-radius:12px;background:var(--ap-bg)}
-.alireza-log-dialog table{font-family:"Vazirmatn","Tahoma",sans-serif!important}
-.alireza-log-dialog th{background:var(--ap-raised)!important;font-weight:700}
-
-/* Nodes, Insights and DNS custom surfaces share one visual grammar. */
-:is([class^="ap-node"],[class*=" ap-node"],[class^="ap-insight"],[class*=" ap-insight"],.ap-dns) :is(button,input,select,textarea){font-family:"Vazirmatn","Tahoma",sans-serif!important}
-:is([class^="ap-node"],[class*=" ap-node"],[class^="ap-insight"],[class*=" ap-insight"]) :is(section,article,.card){border-radius:14px}
-.ap-dns-tabs{gap:7px;padding:6px;border:1px solid var(--ap-border);border-radius:13px;background:var(--ap-surface);margin-bottom:18px}
-.ap-dns-tabs button{flex:0 0 auto;padding:8px 12px!important;border-radius:9px!important}
-.ap-dns-heading{margin-bottom:16px}.ap-dns h2{font-size:21px;margin-bottom:3px}.ap-dns-stats{gap:9px;margin-bottom:18px}.ap-dns-stats>div{padding:14px 16px;border-radius:13px}.ap-dns-stats strong{font-size:22px}.ap-dns-table-wrap{border-radius:13px}.ap-dns th{padding:10px 12px}.ap-dns td{padding:11px 12px}
-(max-width:760px){
- html[data-alireza-theme="ember"] .bo-content{padding-inline:10px}
- html[data-alireza-theme="ember"] .ant-table-thead>tr>th,html[data-alireza-theme="ember"] .ant-table-tbody>tr>td{padding:9px 10px!important}
- .alireza-policy-dialog>h3{padding:17px 16px 12px}.alireza-policy-dialog>input,.alireza-policy-dialog>textarea,.alireza-policy-dialog>label,.alireza-policy-dialog>p,.alireza-policy-dialog>.alireza-game-box{margin-inline:16px!important;width:calc(100% - 32px)!important}.alireza-policy-dialog>button:not(:last-child){margin-inline-start:16px!important}
- .ap-dns-tabs{overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}.ap-dns-tabs::-webkit-scrollbar{display:none}
-}
-
+@media(prefers-reduced-motion:reduce){.bo-content .ant-btn{transition:none!important}.bo-content .ant-btn:hover{transform:none!important}}
 ALIREZAPANEL_EMBEDDED_3_EOF
 
 cat > "$STAGE/logo.svg" <<'ALIREZAPANEL_EMBEDDED_4_EOF'
@@ -3558,7 +3481,7 @@ cat > "$STAGE/nodes.html" <<'NODE_EMBEDDED_HTML_EOF'
 <!doctype html>
 <html lang="fa" dir="rtl" data-alireza-theme="ember"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>alirezapanel · Nodes</title>
 <link rel="stylesheet" href="__BASE_ATTR___alireza/theme.css"><style>
-*{box-sizing:border-box}body{margin:0;background:#0e0e11;color:#f5f2ef;font:14px system-ui,sans-serif;line-height:1.9;padding:26px}main{max-width:1160px;margin:auto}h1,h2,p{margin-top:0}h1{font-size:27px;margin-bottom:3px}h2{font-size:18px}.muted{color:#b7b2ad}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.card{background:#18181c;border:1px solid #303037;border-radius:16px;padding:22px;margin:18px 0}.card .card{margin:10px 0;padding:15px}button,a.btn{background:#ff963f;color:#211208;border:1px solid #ff963f;border-radius:9px;padding:9px 15px;font:inherit;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block}button.secondary{background:#242126;color:#f5f2ef;border-color:#494049}button.danger{background:#372023;color:#ffb0b0;border-color:#603034}button:disabled{opacity:.5;cursor:wait}input,textarea,select{display:block;width:100%;background:#101013;color:#f5f2ef;border:1px solid #494149;border-radius:9px;padding:11px;font:inherit;margin:6px 0 14px}textarea{min-height:110px;resize:vertical;direction:ltr;font:12px monospace}input.code{direction:ltr;font:13px monospace}label{display:block}.row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.row>*{margin-block:0}#notice{position:sticky;top:0;z-index:2;padding:12px 16px;background:#34271d;border:1px solid #795036;border-radius:9px;white-space:pre-wrap}#notice:empty{display:none}.nodehead{display:flex;justify-content:space-between;gap:12px;align-items:center}.endpoint{direction:ltr;text-align:right;overflow-wrap:anywhere}.source{display:grid;grid-template-columns:1fr 1.5fr auto;gap:10px;align-items:center}.source select{margin:0}.badge{color:#ffb170;font-size:12px}summary{cursor:pointer;color:#ffb170}button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid #ffb170;outline-offset:3px}@media (max-width:700px){body{padding:14px}.grid{grid-template-columns:1fr}.source{grid-template-columns:1fr}.nodehead{align-items:start;flex-direction:column}}
+*{box-sizing:border-box}body{margin:0;background:#0e0e11;color:#f5f2ef;font:14px system-ui,sans-serif;line-height:1.9;padding:26px}main{max-width:1160px;margin:auto}h1,h2,p{margin-top:0}h1{font-size:27px;margin-bottom:3px}h2{font-size:18px}.muted{color:#b7b2ad}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.card{background:#18181c;border:1px solid #303037;border-radius:16px;padding:22px;margin:18px 0}.card .card{margin:10px 0;padding:15px}button,a.btn{background:#ff963f;color:#211208;border:1px solid #ff963f;border-radius:9px;padding:9px 15px;font:inherit;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block}button.secondary{background:#242126;color:#f5f2ef;border-color:#494049}button.danger{background:#372023;color:#ffb0b0;border-color:#603034}button:disabled{opacity:.5;cursor:wait}input,textarea,select{display:block;width:100%;background:#101013;color:#f5f2ef;border:1px solid #494149;border-radius:9px;padding:11px;font:inherit;margin:6px 0 14px}textarea{min-height:110px;resize:vertical;direction:ltr;font:12px monospace}input.code{direction:ltr;font:13px monospace}label{display:block}.row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.row>*{margin-block:0}#notice{position:sticky;top:0;z-index:2;padding:12px 16px;background:#34271d;border:1px solid #795036;border-radius:9px;white-space:pre-wrap}#notice:empty{display:none}.nodehead{display:flex;justify-content:space-between;gap:12px;align-items:center}.endpoint{direction:ltr;text-align:right;overflow-wrap:anywhere}.source{display:grid;grid-template-columns:1fr 1.5fr auto;gap:10px;align-items:center}.source select{margin:0}.badge{color:#ffb170;font-size:12px}summary{cursor:pointer;color:#ffb170}button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid #ffb170;outline-offset:3px}@media(max-width:700px){body{padding:14px}.grid{grid-template-columns:1fr}.source{grid-template-columns:1fr}.nodehead{align-items:start;flex-direction:column}}
 a.btn{color:#211208!important}a.btn:hover{color:#211208!important;background:#ffb170}
 </style></head><body><main>
 <div id="notice" role="status" aria-live="polite"></div>
@@ -3685,7 +3608,7 @@ from urllib.parse import urlsplit, unquote
 
 HEADERS = {'Cache-Control': 'no-store, private', 'Referrer-Policy': 'no-referrer',
            'X-Content-Type-Options': 'nosniff', 'X-Robots-Tag': 'noindex, nofollow',
-           'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline' https://cdn.jsdelivr.net; font-src https://cdn.jsdelivr.net; script-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"}
+           'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"}
 
 def counters(headers):
     value = next((v for k,v in headers.items() if k.lower() == 'subscription-userinfo'), '')
@@ -3812,10 +3735,8 @@ def page(title, sources, links, downloads=(), protocols=None, configs=()):
     config_rows = ''.join('<div class="native-file"><div><span class="native-dot"></span><span><strong>'+esc(name)+'</strong><small class="proto">'+esc(kind)+'</small></span></div><div class="native-actions"><button type="button" class="ghost" data-copy-config="'+esc(value,quote=True)+'">کپی کانفیگ</button></div></div>' for name,value,kind in configs)
     config_html = '<section class="links"><div class="section-head"><div><h2>کانفیگ‌های قابل کپی</h2><p class="muted">هر URI واقعی که vpn-ui برای این شناسه منتشر کرده اینجا جداگانه نمایش داده می‌شود؛ هیچ پارامتر Reality/transport حدس زده نمی‌شود.</p></div><span class="pill">'+str(len(configs))+' URI</span></div>'+config_rows+'</section>' if configs else ''
     return '''<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>'''+esc(title)+''' · alirezapanel</title><style>
-@import url('https://cdn.jsdelivr.net/npm/vazirmatn@33.0.3/Vazirmatn-font-face.css');
-:root{color-scheme:dark;--bg:#090c11;--grid:rgba(255,255,255,.035);--surface:#12161f;--surface2:#171c27;--text:#edeff3;--muted:#838da0;--line:rgba(255,255,255,.075);--accent:#2dd4bf;--accent2:#4c8dff;--warn:#f4a94a;--danger:#f0655f;--shadow:0 10px 30px rgba(0,0,0,.22)}
-*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:Vazirmatn,Tahoma,sans-serif}body{background-image:radial-gradient(var(--grid) 1px,transparent 1px);background-size:18px 18px}main{width:min(100%,480px);margin:auto;padding:20px 16px 54px}header{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:18px}.brand{display:flex;align-items:center;gap:9px;font-weight:800;direction:ltr}.brand:before{content:'';width:11px;height:11px;border-radius:50%;background:var(--accent);box-shadow:0 0 18px rgba(45,212,191,.6)}.eyebrow{font-size:11px;color:var(--muted);margin:0}.title-wrap{min-width:0}h1{font-size:clamp(22px,4vw,31px);line-height:1.35;margin:2px 0;overflow-wrap:anywhere}h2{font-size:15px;margin:0}.muted,dt{color:var(--muted)}.intro{margin:0 0 18px;font-size:13px}.cards{display:grid;grid-template-columns:1fr;gap:12px}.card,.links{background:linear-gradient(145deg,var(--surface),#0d1119);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:var(--shadow)}.card-head,.section-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}.pill{font-size:10px;background:rgba(45,212,191,.1);color:var(--accent);border:1px solid rgba(45,212,191,.18);padding:3px 9px;border-radius:999px}.usage{display:flex;align-items:center;gap:20px;margin:17px 0}.usage p{font-size:11px;margin:2px 0}.big{font-size:25px;font-weight:800;letter-spacing:-.5px}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:12px 0}.metrics>div{padding:9px;border:1px solid var(--line);border-radius:11px;background:rgba(8,11,18,.55);min-width:0}.metrics small{display:block;color:var(--muted);font-size:9px}.metrics strong{display:block;overflow:hidden;text-overflow:ellipsis;font-size:11px}.ring{position:relative;width:108px;height:108px;flex-shrink:0}.ring svg{width:100%;height:100%;transform:rotate(-90deg)}circle{fill:none;stroke-width:8}.track{stroke:#252c39}.fill{stroke:var(--accent);stroke-linecap:round;filter:drop-shadow(0 0 5px rgba(45,212,191,.3))}.ring strong{position:absolute;inset:0;display:grid;place-content:center;font-size:20px;direction:ltr}.split,.remain{height:5px;background:#252b38;border-radius:8px;overflow:hidden;direction:ltr}.split span,.remain span{display:block;height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent))}.chart-label{display:flex;justify-content:space-between;gap:12px;margin:11px 0 5px;font-size:10px;color:var(--muted)}.chart-label strong{color:var(--text)}dl{margin-bottom:0}dl>div{display:flex;justify-content:space-between;gap:16px;padding:7px 0;border-bottom:1px solid var(--line);font-size:11px}dl>div:last-child{border:0}dd{margin:0;text-align:end;font-variant-numeric:tabular-nums}.links{margin-top:12px}.section-head p{margin:4px 0 0;font-size:11px;max-width:680px}.protocol-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:13px}.protocol-card{display:flex;justify-content:space-between;align-items:center;gap:7px;border:1px solid var(--line);background:var(--surface2);border-radius:11px;padding:9px 10px}.protocol-card span{font-size:11px;color:var(--muted)}.protocol-card strong{font-size:15px;color:var(--accent)}.link-row{display:flex;gap:10px;align-items:center;padding:13px 0;border-bottom:1px solid var(--line)}.link-row:last-child{border:0}.link-row>div{flex:1;min-width:0}.link-row strong{display:block;font-size:12px}.link-row>div>a{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px;color:var(--muted);max-width:100%;direction:ltr;text-align:left}a{color:var(--accent);text-decoration:none}button,.file{font-family:Vazirmatn,Tahoma,sans-serif;font-size:11px;border:1px solid rgba(45,212,191,.28);border-radius:10px;padding:7px 11px;background:rgba(45,212,191,.1);color:var(--accent);cursor:pointer;white-space:nowrap;transition:.18s ease}button:hover,.file:hover{background:var(--accent);color:#06110f}.native-file{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}.native-file:last-of-type{border-bottom:0}.native-file>div{min-width:0;display:flex;align-items:center;gap:7px}.native-file strong{overflow-wrap:anywhere;font-size:12px}.proto{display:inline-block;margin-inline-start:6px;color:var(--muted);font-size:9px;border:1px solid var(--line);border-radius:999px;padding:1px 6px}.native-actions{display:flex;gap:6px;align-items:center}.ghost{background:transparent;color:var(--accent);font-weight:500}.native-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 9px rgba(45,212,191,.55);flex:none}footer{margin-top:16px;padding:13px 4px;font-size:10px;color:var(--muted)}#feedback{min-height:20px;color:var(--accent);font-size:11px;margin:8px 0 0}a:focus-visible,button:focus-visible{outline:2px solid var(--accent2);outline-offset:3px}@media (max-width:560px){main{padding:17px 12px 40px}.card,.links{padding:15px;border-radius:16px}.link-row{flex-wrap:wrap}.link-row>div{flex-basis:100%}.usage{gap:14px}.big{font-size:22px}.metrics{grid-template-columns:1fr}.native-file{align-items:flex-start;flex-direction:column}.native-actions{width:100%;flex-wrap:wrap}.native-actions>*{flex:1;text-align:center}header{align-items:flex-start}.ring{width:96px;height:96px}}@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
-</style></head><body><main><header><div><p class="eyebrow">اشتراک شخصی</p><h1>'''+esc(title)+'''</h1></div><span class="brand" dir="ltr">alirezapanel</span></header><p class="intro muted">حجم، انقضا و همه خروجی‌های واقعی اشتراک در یک صفحه؛ لینک‌های پروکسی قابل مشاهده و کپی هستند و فایل‌های WireGuard / AmneziaWG / OpenVPN در صورت انتشار توسط هسته قابل دانلودند.</p><div class="cards">'''+cards+'''</div>'''+inventory_html+'''<section class="links"><h2>لینک اشتراک و کانفیگ‌ها</h2><p class="muted">فرمت مناسب کلاینت را کپی کنید. URIهای VLESS/VMess/Trojan/Shadowsocks/SOCKS/HTTP و سایر خروجی‌های متنی که هسته منتشر کند جداگانه نمایش داده می‌شوند؛ فایل‌های مستقل WireGuard/OpenVPN/AmneziaWG نیز بدون تبدیل یا حدس‌زدن پارامترها برای دانلود ارائه می‌شوند.</p>'''+actions+files+'''<p id="feedback" role="status" aria-live="polite"></p></section>'''+config_html+'''<footer>این لینک خصوصی است؛ آن را فقط در اختیار صاحب اشتراک قرار دهید.<br>نمودارها مصرف تجمیعی فعلی سرور را نشان می‌دهند؛ آمار با بازکردن دوبارهٔ صفحه تازه می‌شود. سهمیهٔ هر منبع مستقل است.</footer></main><script>
+:root{color-scheme:dark;--bg:#080b12;--surface:#0f1420;--line:#273248;--muted:#9da9bd;--accent:#59d7ff}*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 90% 0,#14344f88,transparent 46%),radial-gradient(ellipse at 10% 0,#251f5266,transparent 40%),var(--bg);color:#f6f2ef;font:15px/1.8 system-ui,sans-serif}main{max-width:1050px;margin:auto;padding:36px 24px 60px}header{display:flex;justify-content:space-between;gap:20px;align-items:center;border-bottom:1px solid var(--line);padding-bottom:22px}.brand{font-weight:700;letter-spacing:.5px;color:var(--accent)}.eyebrow{font-size:12px;color:var(--muted);margin:0}h1{font-size:clamp(24px,4vw,36px);margin:5px 0 0;overflow-wrap:anywhere}h2{font-size:17px;margin:0}.muted,dt{color:var(--muted)}.intro{margin:24px 0}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(310px,100%),1fr));gap:18px}.card,.links{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:22px}.card-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.pill{font-size:11px;background:#59d7ff15;color:var(--accent);padding:3px 10px;border-radius:20px}.usage{display:flex;align-items:center;gap:26px;margin:22px 0}.usage p{font-size:12px;margin:3px 0}.big{font-size:28px;font-weight:650;letter-spacing:-1px}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0}.metrics>div{padding:10px;border:1px solid var(--line);border-radius:12px;background:#080b1266;min-width:0}.metrics small{display:block;color:var(--muted);font-size:10px}.metrics strong{display:block;overflow:hidden;text-overflow:ellipsis;font-size:12px}.ring{position:relative;width:128px;height:128px;flex-shrink:0}.ring svg{width:100%;height:100%;transform:rotate(-90deg)}circle{fill:none;stroke-width:8}.track{stroke:#30333e}.fill{stroke:var(--accent);stroke-linecap:round}.ring strong{position:absolute;inset:0;display:grid;place-content:center;font-size:23px;direction:ltr}.split{height:6px;background:#849bec;border-radius:8px;overflow:hidden;direction:ltr}.split span{display:block;height:100%;background:linear-gradient(90deg,var(--accent),#6ca8ff)}.chart-label{display:flex;justify-content:space-between;gap:12px;margin-top:14px;font-size:11px;color:var(--muted)}.chart-label strong{color:#f6f2ef}.remain{height:6px;margin-top:6px;background:#252b38;border-radius:8px;overflow:hidden;direction:ltr}.remain span{display:block;height:100%;background:linear-gradient(90deg,#6ca8ff,var(--accent))}dl{margin-bottom:0}dl>div{display:flex;justify-content:space-between;gap:16px;padding:9px 0;border-bottom:1px solid #30323c80}dl>div:last-child{border:0}dd{margin:0;text-align:end;font-variant-numeric:tabular-nums}.links{margin-top:22px}.section-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}.section-head p{margin:5px 0 0}.protocol-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:9px;margin-top:16px}.protocol-card{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--line);background:#080b1266;border-radius:12px;padding:11px 12px}.protocol-card span{font-size:12px;color:var(--muted)}.protocol-card strong{font-size:17px;color:var(--accent)}.link-row{display:flex;gap:12px;align-items:center;padding:20px 0;border-bottom:1px solid var(--line)}.link-row:last-child{border:0}.link-row>div{flex:1;min-width:0}.link-row strong{display:block;font-size:14px}.link-row>div>a{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:var(--muted);max-width:100%}a{color:var(--accent);text-decoration:none}button,.download,.file{font:inherit;font-size:13px;border:1px solid #35506a;border-radius:10px;padding:8px 13px;background:transparent;color:var(--accent);cursor:pointer;white-space:nowrap}button{background:var(--accent);color:#03131b;font-weight:650}a:focus-visible,button:focus-visible{outline:2px solid #c8d4ff;outline-offset:4px}.file{display:inline-block;margin:0;white-space:normal;overflow-wrap:anywhere}.native-file{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid var(--line)}.native-file>div{min-width:0;display:flex;align-items:center;gap:8px}.native-file strong{overflow-wrap:anywhere}.proto{display:inline-block;margin-inline-start:8px;color:var(--muted);font-size:10px;border:1px solid var(--line);border-radius:999px;padding:0 7px}.native-actions{display:flex;gap:7px;align-items:center}.ghost{background:transparent;color:var(--accent);font-weight:500}.native-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent);flex:none}footer{margin-top:24px;font-size:12px;color:var(--muted)}#feedback{min-height:24px;color:var(--accent)}@media(max-width:540px){main{padding:22px 14px}.card,.links{padding:18px}.link-row{flex-wrap:wrap}.link-row>div{flex-basis:100%}.usage{gap:18px}.big{font-size:25px}.metrics{grid-template-columns:1fr}.native-file{align-items:flex-start;flex-direction:column}.native-actions{width:100%;flex-wrap:wrap}header{align-items:start;flex-direction:column;gap:10px}}@media(prefers-color-scheme:light){:root{color-scheme:light;--bg:#f6f3ef;--surface:#fff;--line:#e4dfd8;--muted:#686672;--accent:#a4541c}body{color:#28252c}.track{stroke:#ebe5df}.fill{stroke:#da8445}button{background:#f0a86d}.pill{background:#a4541c10}}
+</style></head><body><main><header><div><p class="eyebrow">اشتراک شخصی</p><h1>'''+esc(title)+'''</h1></div><span class="brand" dir="ltr">alirezapanel</span></header><p class="intro muted">حجم، انقضا و همه مسیرهای اتصال در یک نگاه؛ لینک اشتراک با یک لمس مستقیماً کپی می‌شود.</p><div class="cards">'''+cards+'''</div>'''+inventory_html+'''<section class="links"><h2>لینک اشتراک و کانفیگ‌ها</h2><p class="muted">فرمت مناسب برنامه را مستقیم کپی کنید. فایل‌های مستقل WireGuard/OpenVPN/AmneziaWG و سایر خروجی‌های بومی، در صورت فعال بودن پروتکل، پایین همین بخش نمایش داده می‌شوند.</p>'''+actions+files+'''<p id="feedback" role="status" aria-live="polite"></p></section>'''+config_html+'''<footer>این لینک خصوصی است؛ آن را فقط در اختیار صاحب اشتراک قرار دهید.<br>نمودارها مصرف تجمیعی فعلی سرور را نشان می‌دهند؛ آمار با بازکردن دوبارهٔ صفحه تازه می‌شود. سهمیهٔ هر منبع مستقل است.</footer></main><script>
 document.addEventListener('click',async function(e){const b=e.target.closest('[data-copy],[data-copy-config]');if(!b)return;const raw=b.dataset.copyConfig;const value=raw!==undefined?raw:new URL(b.dataset.copy,location.href).href;const out=document.getElementById('feedback');try{if(navigator.clipboard&&isSecureContext)await navigator.clipboard.writeText(value);else{const t=document.createElement('textarea');t.value=value;document.body.append(t);t.select();const ok=document.execCommand('copy');t.remove();if(!ok)throw Error();}out.textContent=raw!==undefined?'✓ کانفیگ مستقیماً کپی شد.':'✓ لینک مستقیماً کپی شد.';}catch(_){out.textContent='مرورگر اجازه کپی خودکار نداد؛ مقدار را دستی کپی کنید.';}});
 </script></body></html>'''
 NODE_EMBEDDED_SUBSCRIBER_PY_EOF
@@ -4190,10 +4111,6 @@ class DNSClients:
             status = await self.agh('status')
             if not status.get('protection_enabled'):
                 await self.agh('protection', {'enable': True})
-        if cfg['adult']:
-            parental = await self.agh('parental/status')
-            if not parental.get('enabled'):
-                await self.agh('parental/enable', {})
         if cfg['ads']:
             status = await self.agh('filtering/status')
             if not status.get('enabled'):
@@ -4207,17 +4124,10 @@ class DNSClients:
                     'name': 'AdGuard DNS filter',
                     'url': 'https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt',
                     'whitelist': False})
-                # add_url registers the list; refresh downloads/loads it immediately.
-                # This is an on-save operation only, so it adds no idle worker/RAM cost.
-                await self.agh('filtering/refresh', {'whitelist': False})
-                for _ in range(4):
-                    status = await self.agh('filtering/status')
-                    usable = any(f.get('enabled') and f.get('rules_count', 0) for f in status.get('filters', []))
-                    if usable:
-                        break
-                    await asyncio.sleep(0.75)
+                status = await self.agh('filtering/status')
+                usable = any(f.get('enabled') and f.get('rules_count', 0) for f in status.get('filters', []))
                 if not usable:
-                    raise web.HTTPBadGateway(text='فهرست AdGuard ثبت شد ولی قوانین آن بارگذاری نشد؛ اتصال سرور به منبع فیلتر را بررسی کن.')
+                    raise web.HTTPBadGateway(text='فهرست AdGuard اضافه شد اما هنوز آماده نیست؛ یک‌بار دیگر ذخیره را بزن.')
 
     async def save_client(self, data):
         cfg = client_config(data)
@@ -4714,8 +4624,6 @@ def apply_policy(config, email, choices):
     result = copy.deepcopy(config); current = policies(config,email)
     current.update(choices); choices = current
     routing = result.setdefault('routing', {}); rules = routing.setdefault('rules', [])
-    # Keep the operator's routing strategy; filtering is based on sniffed destination names.
-    # Do not rewrite DNS, protocol, transport or outbound defaults.
     key = policy_key(email); owned = {key,key+'-torrent',key+'-gaming'}
     # Only remove rules for this exact identity, never an operator's unrelated rule.
     routing['rules'] = [r for r in rules if not (r.get('ruleTag') in owned and r.get('user') == [email])]
@@ -4834,7 +4742,7 @@ class Features:
                         except ValueError: sniff={}
                     dest=list(sniff.get('destOverride') or [])
                     changed=False
-                    for item in ('http','tls','quic'):
+                    for item in ('http','tls'):
                         if item not in dest: dest.append(item); changed=True
                     if not sniff.get('enabled'): sniff['enabled']=True; changed=True
                     if sniff.get('metadataOnly'): sniff['metadataOnly']=False; changed=True
@@ -4852,7 +4760,7 @@ class Features:
                     if isinstance(sniff,str):
                         try: sniff=json.loads(sniff)
                         except ValueError: sniff={}
-                    if not sniff.get('enabled') or not {'http','tls','quic'} <= set(sniff.get('destOverride') or []) or sniff.get('metadataOnly'):
+                    if not sniff.get('enabled') or not {'http','tls'} <= set(sniff.get('destOverride') or []) or sniff.get('metadataOnly'):
                         raise web.HTTPBadGateway(text='پنل نتوانست Sniffing لازم برای فیلتر را خودکار فعال کند؛ هیچ قانون فیلتر ناقصی اعمال نشد.')
             if choices['gaming'] and original.get('outbounds') and original['outbounds'][0].get('protocol') == 'blackhole':
                 raise web.HTTPBadRequest(text='خروجی پیش‌فرض مسدود است؛ Gaming مسیر مسدود پیش‌فرض را دور نمی‌زند.')
@@ -4879,13 +4787,6 @@ class Features:
                                   {'xraySetting': json.dumps(original), 'outboundTestUrl': test_url})
                 await self.native(request, 'POST', 'panel/api/server/restartXrayService')
                 raise web.HTTPBadGateway(text='Filter could not start; previous configuration restored.')
-            # Verify the exact per-user policy survived native validation/restart.
-            persisted, _ = await self.configuration(request)
-            actual = policies(persisted, email)
-            expected = {k: choices[k] for k in FLAGS}
-            expected['domains'] = domains_list(choices.get('domains', []))
-            if any(bool(actual.get(k)) != bool(expected[k]) for k in FLAGS) or sorted(actual.get('domains', [])) != sorted(expected['domains']):
-                raise web.HTTPBadGateway(text='Xray restart شد ولی قوانین فیلتر این کاربر در تنظیمات نهایی باقی نماند؛ برای جلوگیری از موفقیت ظاهری، عملیات ناموفق اعلام شد.')
             warnings = []
             if choices['gaming']:
                 warnings.append('Gaming فقط خروج UDP بدون قانون قبلی را مستقیم می‌کند؛ UDP پورت ۵۳ و مسیرهای صریح حفظ می‌شوند. کاهش پینگ تضمینی نیست.')
@@ -4963,7 +4864,7 @@ cat > "$STAGE/features.js" <<'NODE_EMBEDDED_FEATURES_JS_EOF'
     const dialog=node('dialog');dialog.className='alireza-policy-dialog';dialog.dir='rtl';
     const title=node('h3','فیلتر و حالت گیمینگ کلاینت');const who=node('input');who.value=email||'';who.placeholder='شناسه / ایمیل کلاینت';who.readOnly=!!email;who.setAttribute('aria-label','شناسه کلاینت');
     const status=node('p');status.setAttribute('role','status');
-    const info=node('p','فیلتر دامنه برای همین کاربر روی سرور انتخاب‌شده اعمال می‌شود. نیاز به دیتای geosite دارد؛ پوشش همهٔ محتوا یا ترافیک رمزگذاری‌شده تضمین نمی‌شود. فقط VLESS / VMess / Trojan / Shadowsocks هستهٔ Xray پشتیبانی می‌شوند. پیش‌نیاز Sniffing HTTP/TLS/QUIC هنگام اعمال به‌صورت خودکار تنظیم می‌شود. تغییر تنظیمات هسته ممکن است اتصال‌ها را کوتاه قطع کند.');
+    const info=node('p','فیلتر دامنه برای همین کاربر روی سرور انتخاب‌شده اعمال می‌شود. نیاز به دیتای geosite دارد؛ پوشش همهٔ محتوا یا ترافیک رمزگذاری‌شده تضمین نمی‌شود. فقط VLESS / VMess / Trojan / Shadowsocks هستهٔ Xray پشتیبانی می‌شوند. پیش‌نیاز Sniffing HTTP/TLS هنگام اعمال به‌صورت خودکار تنظیم می‌شود. تغییر تنظیمات هسته ممکن است اتصال‌ها را کوتاه قطع کند.');
     const inputs={};dialog.append(title,who,info);
     for(const [key,label] of [['adult','مسدودسازی محتوای بزرگسال'],['ads','مسدودسازی تبلیغات'],['social','مسدودسازی شبکه‌های اجتماعی'],['messengers','مسدودسازی پیام‌رسان‌ها / ارتباطات'],['youtube','مسدودسازی یوتیوب'],['torrent','مسدودسازی تورنت قابل تشخیص']]){
       const row=node('label');const input=node('input');input.type='checkbox';inputs[key]=input;row.append(input,document.createTextNode(label));dialog.append(row);
@@ -4987,7 +4888,7 @@ cat > "$STAGE/features.js" <<'NODE_EMBEDDED_FEATURES_JS_EOF'
     save.onclick=async()=>{const name=who.value.trim();if(!name){status.textContent='شناسه کلاینت را وارد کن.';return;}
       const choice={email:name,...Object.fromEntries(Object.entries(inputs).map(([k,v])=>[k,v.checked])),domains:custom.value.split('\n').map(v=>v.trim()).filter(Boolean),gaming};save.disabled=true;
       try{if(queue){pending.set(name,choice);message('انتخاب شد؛ برای اعمال فیلتر دکمهٔ ذخیرهٔ کلاینت را بزن.');}
-        else{status.textContent='در حال اعتبارسنجی، راه‌اندازی مجدد Xray و بررسی نهایی قوانین…';const result=await api('policy',choice);pending.delete(name);message('تنظیمات روی سرور اعمال شد.'+(result.warnings?.length?' '+result.warnings.join(' '):''));}
+        else{status.textContent='در حال اعتبارسنجی و اعمال؛ ممکن است دانلود دیتای فیلتر زمان ببرد…';const result=await api('policy',choice);pending.delete(name);message('تنظیمات روی سرور اعمال شد.'+(result.warnings?.length?' '+result.warnings.join(' '):''));}
         dialog.close();
       }catch(e){status.textContent=e.message;}finally{save.disabled=false;}};
     dialog.append(status,save,cancel);dialog.addEventListener('close',()=>dialog.remove());document.body.append(dialog);dialog.showModal();if(email)await read();
