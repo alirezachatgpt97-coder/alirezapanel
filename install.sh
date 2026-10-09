@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# alirezapanel 2.6.2.0 -- one-file ONLINE installer, 2026-09-17
+# alirezapanel 2.8.0 -- one-file ONLINE installer, 2026-10-09
 # Debian 12/13 or Ubuntu 24.04, x86_64, systemd, fresh server.
 # No build toolchain, Docker, Node.js, or npm is installed on the target.
 # Upstream executables and their full interfaces are retained; a small gateway
@@ -520,8 +520,36 @@ class Gateway:
         return pattern.sub(patch, document, count=1)
 
     def brand_html(self, text, base, agh=False):
+        if agh:
+            return text
         if not agh:
             text = self.fix_restart_html(text)
+            text = text.replace("""        const pollInterval = setInterval(async () => {
+          if (window.wsClient && window.wsClient.isConnected) {""", """        if (this._apPollTimer) return;
+        let polling = false;
+        const pollInterval = this._apPollTimer = setInterval(async () => {
+          if (document.hidden || polling) return;
+          if (window.wsClient && window.wsClient.isConnected) {""")
+            text = text.replace("""            clearInterval(pollInterval);
+            return;
+          }
+          try {
+            await this.getStatus();""", """            clearInterval(pollInterval);
+            this._apPollTimer = null;
+            return;
+          }
+          polling = true;
+          try {
+            await this.getStatus();""")
+            text = text.replace("""            await this.getCoreStatuses();
+          } catch (e) {
+            console.error(e);
+          }
+        }, 2000);""", """            await this.getCoreStatuses();
+          } catch (e) {
+            console.error(e);
+          } finally { polling = false; }
+        }, 5000);""")
             text = text.replace('<a-input v-model.trim="client.email"></a-input>', '<a-input v-model.trim="client.email"></a-input><button type="button" class="alireza-policy-button" data-alireza-policy :data-email="client.email">فیلتر / گیمینگ</button>')
             text = text.replace('@click="showAccountInfo(row)"></a-button>', '@click="showAccountInfo(row)"></a-button><button type="button" class="alireza-user-logs" data-alireza-user-logs :data-email="row.email">لاگ</button>')
             text = text.replace('data-alireza-policy :data-email="client.email">فیلتر / گیمینگ</button>', 'data-alireza-policy :data-email="client.email">فیلتر / گیمینگ</button><button type="button" class="alireza-user-logs" data-alireza-user-logs :data-email="client.email">لاگ اتصال</button>')
@@ -533,16 +561,19 @@ class Gateway:
         # The stylesheet loads after the upstream styles. Mark the document before
         # first paint; don't override saved user theme choices on every visit.
         tag = ('<link rel="stylesheet" href="' + html.escape(base, quote=True) +
-               '_alireza/theme.css?v=2.4.0"><script>document.documentElement.setAttribute("data-alireza-theme","ember");'
+               '_alireza/theme.css?v=2.8.0"><script>document.documentElement.setAttribute("data-alireza-theme","ember");'
+               'const apLang=(document.cookie.match(/(?:^|;\\s*)lang=([^;]*)/)||[])[1]||navigator.language||"en-US";'
+               'try{document.documentElement.lang=decodeURIComponent(apLang).replace("_","-");}catch(_){document.documentElement.lang="en-US";}'
+               'document.documentElement.dir=/^(fa|ar|he)(-|$)/i.test(document.documentElement.lang)?"rtl":"ltr";'
                'window.ALIREZA=' + opts + ';</script><script defer src="' +
-               html.escape(base, quote=True) + '_alireza/brand.js?v=1.1.0"></script>')
+               html.escape(base, quote=True) + '_alireza/brand.js?v=2.8.0"></script>')
         if not agh:
-            tag += '<script defer src="' + html.escape(base, quote=True) + '_alireza/nodes.js?v=1.0.0"></script>'
+            tag += '<script defer src="' + html.escape(base, quote=True) + '_alireza/nodes.js?v=2.8.0"></script>'
         if not agh:
-            tag += '<script defer src="' + html.escape(base, quote=True) + '_alireza/features.js?v=1.4.0"></script>'
+            tag += '<script defer src="' + html.escape(base, quote=True) + '_alireza/features.js?v=2.8.0"></script>'
         if not agh:
-            tag += '<script defer src="' + html.escape(base, quote=True) + '_alireza/insights.js?v=2.0.0"></script>'
-        return re.sub(r"</head\s*>", tag + "</head>", text, count=1, flags=re.I)
+            tag += '<script defer src="' + html.escape(base, quote=True) + '_alireza/insights.js?v=2.8.0"></script>'
+        return re.sub(r"</head\s*>", lambda _: tag + "</head>", text, count=1, flags=re.I)
 
     def dns_shell(self, upstream_html, base, managed=False):
         head = re.search(r"<head\b[^>]*>(.*?)</head>", upstream_html, re.I | re.S)
@@ -565,14 +596,9 @@ class Gateway:
   <a-sidebar></a-sidebar><div class="bo-main">
   <header class="bo-topbar"><div class="bo-topbar-inner"><h1 class="bo-topbar-title">alirezapanel · DNS</h1></div></header>
   <main class="bo-content" style="min-width:0">
-  <div id="alireza-dns-clients" dir="rtl"></div>
-  <iframe id="alireza-dns" title="alirezapanel DNS · تنظیمات پیشرفته" data-src="''' + src + '''" hidden style="width:100%;min-height:480px;border:0" allow="clipboard-write"></iframe>
+  <iframe id="alireza-dns" title="alirezapanel DNS · تنظیمات پیشرفته" src="''' + src + '''" style="width:100%;min-height:480px;border:0" allow="clipboard-write"></iframe>
   </main></div></div>''' + "\n".join(scripts) + '''
-<script>const app=new Vue({el:'#app',data:{themeSwitcher}});</script><script defer src="''' + html.escape(base, quote=True) + '''_alireza/dns-clients.js?v=2.6.0"></script></body>'''
-        if not managed:
-            body = body.replace('<div id="alireza-dns-clients" dir="rtl"></div>', '')
-            body = body.replace('data-src="', 'src="').replace(' hidden style="', ' style="')
-            body = re.sub(r'<script defer src="[^"<>]*_alireza/dns-clients\.js[^"<>]*"></script>', '', body)
+<script>const app=new Vue({el:'#app',data:{themeSwitcher}});</script></body>'''
         return self.brand_html("<!doctype html><html><head>" + head.group(1) + "</head>" + body + "</html>", base)
 
     def validate_origin(self, request):
@@ -627,13 +653,26 @@ class Gateway:
         if feature_response is not None:
             return feature_response
         if relative == "_alireza/brand.js":
-            return web.FileResponse(self.root / "brand.js", headers={"Cache-Control": "no-cache"})
+            return web.FileResponse(self.root / "brand.js", headers={"Cache-Control": "public,max-age=86400,immutable" if request.query.get("v") == "2.8.0" else "no-cache"})
         if relative == "_alireza/theme.css":
-            return web.FileResponse(self.root / "theme.css", headers={"Cache-Control": "no-cache"})
+            return web.FileResponse(self.root / "theme.css", headers={"Cache-Control": "public,max-age=86400,immutable" if request.query.get("v") == "2.8.0" else "no-cache"})
         if relative == "_alireza/logo.svg":
             return web.FileResponse(self.root / "logo.svg", headers={"Cache-Control": "public,max-age=86400"})
         if relative == "_alireza/session":
             return web.json_response({"admin": await self.is_admin(request)}, headers={"Cache-Control": "no-store"})
+        if relative in ('panel/content', 'panel/content/'):
+            if not await self.is_admin(request):
+                raise web.HTTPFound(base)
+            async with self.vpn.get(vpn_origin+base+'panel/admins',ssl=tls,
+                    headers={'Cookie':request.headers.get('Cookie',''),'Host':request.host,
+                             'Accept-Encoding':'identity'},allow_redirects=False) as response:
+                if response.status != 200:
+                    raise web.HTTPBadGateway(text='Panel layout unavailable.')
+                document=self.dns_shell(await response.text(),base)
+            document=re.sub(r'<iframe\b[^>]*id="alireza-dns".*?</iframe>',
+                '<section id="alireza-content" aria-live="polite"></section>',document,flags=re.S)
+            document=document.replace('alirezapanel · DNS','alirezapanel · Content')
+            return web.Response(text=document,content_type='text/html',headers={'Cache-Control':'no-store'})
         if relative in ("panel/dns", "panel/dns/"):
             if not await self.is_admin(request):
                 raise web.HTTPFound(base)
@@ -643,7 +682,7 @@ class Gateway:
                                     allow_redirects=False) as response:
                 if response.status != 200:
                     raise web.HTTPBadGateway(text="VPN interface is unavailable.")
-                document = self.dns_shell(await response.text(), base, managed=True)
+                document = self.dns_shell(await response.text(), base)
             return web.Response(text=document, content_type="text/html", headers={"Cache-Control": "no-store"})
         agh = relative == "dns" or relative.startswith("dns/")
         if agh:
@@ -724,6 +763,21 @@ class Gateway:
                 out['Cache-Control'] = 'no-store'
                 return web.Response(body=json.dumps(data).encode(), headers=out)
             content_type = response.headers.get("Content-Type", "").lower()
+            if (not agh and response.status == 403 and request.method == 'GET'
+                    and relative.startswith('panel/') and 'text/plain' in content_type
+                    and 'text/html' in request.headers.get('Accept', '')
+                    and request.headers.get('X-Requested-With') != 'XMLHttpRequest'):
+                reason = html.escape((await response.text())[:1000])
+                page = ('<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8">'
+                    '<meta name="viewport" content="width=device-width,initial-scale=1"></head>'
+                    '<body><main class="ap-access-card"><span class="ap-eyebrow">ALIREZAPANEL</span>'
+                    '<h1>دسترسی صفحه فعال نیست / Page access unavailable</h1>'
+                    '<p>ورود انجام شده است؛ مدیر اصلی باید مجوز یک بخش را برای این حساب انتخاب کند.</p>'
+                    '<p>You are signed in. Ask the owner to grant access to a panel section.</p>'
+                    '<p>'+reason+'</p><a class="ap-action" href="'+html.escape(base+'logout',quote=True)+'">'
+                    'خروج / Sign out</a></main></body></html>')
+                return web.Response(text=self.brand_html(page,base),status=403,content_type='text/html',
+                    headers={'Cache-Control':'no-store'})
             if "text/html" in content_type and response.status == 200 and request.method != "HEAD":
                 chunks, size = [], 0
                 async for chunk in response.content.iter_chunked(65536):
@@ -1063,24 +1117,26 @@ def check(login=False):
             page = response.read().decode()
             assert 'alireza-dns' in page and "Vue.component('a-sidebar'" in page, 'DNS shell failed'
         with opener.open(url + 'dns/', timeout=20) as response:
-            assert '_alireza/brand.js' in response.read().decode(), 'DNS branding failed'
+            page=response.read().decode()
+            assert response.headers.get_content_type() == 'text/html' and '<html' in page.lower(), 'Native AdGuard interface failed'
+            assert '_alireza/brand.js' not in page, 'AdGuard interface must remain native'
         print('OK shared login, full DNS interface, VPN sidebar and DNS API')
-    # The private DoH relay must actually resolve, not merely expose a UI toggle.
-    query = b'\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x07example\x03com\x00\x00\x01\x00\x01'
-    req = urllib.request.Request(cfg['agh_origin'] + '/dns-query', data=query,
-          headers={'Content-Type':'application/dns-message', 'Accept':'application/dns-message'})
-    with urllib.request.urlopen(req, timeout=12) as response:
-        answer = response.read(65536)
-        if response.headers.get_content_type() != 'application/dns-message' or len(answer) < 12 or answer[:2] != query[:2] or not answer[2] & 128 or answer[3] & 15:
-            raise SystemExit('Managed DoH backend failed. Run --repair and check DNS upstreams.')
-    print('OK actual private DoH backend response')
-    # Test actual DNS resolution on every address AdGuard was configured to bind.
-    for dns_host in cfg.get('dns_bind_hosts', []):
-        result = subprocess.run(['dig', '@' + dns_host, '-p', '53', 'example.com', 'A', '+time=5', '+tries=1'],
-                                check=True, capture_output=True, text=True)
-        if 'status: NOERROR' not in result.stdout or 'ANSWER: 0' in result.stdout:
-            raise SystemExit('DNS resolution failed on ' + dns_host + ':53. Check upstream connectivity and firewall settings.')
-        print('OK actual DNS query:', dns_host + ':53')
+    # Check the current AdGuard listener, without enabling retired DoH routes or
+    # replacing operator settings. Native encrypted-only DNS can remain intentional.
+    import yaml
+    agh = yaml.safe_load((ROOT / 'adguard/AdGuardHome.yaml').read_text())
+    dns = agh.get('dns', {})
+    if dns.get('serve_plain_dns', True) and dns.get('port', 53):
+        for dns_host in dns.get('bind_hosts', cfg.get('dns_bind_hosts', [])):
+            probe_host = {'0.0.0.0':'127.0.0.1', '::':'::1'}.get(dns_host,dns_host)
+            dns_port = str(dns.get('port', 53))
+            result = subprocess.run(['dig', '@'+probe_host, '-p', dns_port, 'example.com', 'A', '+time=5', '+tries=1'],
+                                    check=True, capture_output=True, text=True)
+            if not any('status: '+status in result.stdout for status in ('NOERROR','NXDOMAIN')):
+                raise SystemExit('DNS probe failed on '+probe_host+':'+dns_port+'. Check AdGuard access rules/upstreams.')
+            print('OK DNS response:', probe_host+':'+dns_port)
+    else:
+        print('Plain DNS disabled in AdGuard; network resolver probe skipped.')
 
 
 if __name__ == '__main__':
@@ -1171,7 +1227,7 @@ cat > "$STAGE/brand.js" <<'ALIREZAPANEL_EMBEDDED_2_EOF'
       if (record.type === 'characterData') visit(record.target);
       else for (const node of record.addedNodes) visit(node);
     }
-    if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; identity(); }); }
+    if (records.some(r => [...r.addedNodes].some(n => n.nodeType === 1 && (n.matches('.bo-rail,img') || n.querySelector('.bo-rail,img')))) && !pending) { pending = true; requestAnimationFrame(() => { pending = false; identity(); }); }
   });
   visit(document.body); identity();
   observer.observe(document.documentElement, {childList: true, subtree: true, characterData: true});
@@ -1501,6 +1557,72 @@ html[data-alireza-theme="ember"] #alireza-dns { background:var(--ap-bg); height:
 .ap-dns-quick{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:10px 0 16px;padding:10px;border:1px solid var(--ap-border,#273248);border-radius:12px;background:rgba(30,90,130,.06)}
 .ap-dns-quick>span{font-size:12px;opacity:.72;margin-inline-end:3px}
 @media(prefers-reduced-motion:reduce){.bo-content .ant-btn{transition:none!important}.bo-content .ant-btn:hover{transform:none!important}}
+/* 2.8 · Aurora: shared panel surfaces, native controls and layout retained. */
+html[data-alireza-theme="ember"] body.light,
+html[data-alireza-theme="ember"][data-theme="light"],
+html[data-alireza-theme="ember"][data-theme="light"] body{
+ --ap-bg:#f2f6fc;--ap-surface:#fff;--ap-raised:#edf2fa;--ap-border:#d7e2f1;--ap-text:#14233c;--ap-muted:#576b89;
+ --ap-orange:#1764b7;--ap-orange-hover:#154d88;--ap-orange-soft:#e5f1ff;--ap-on-orange:#fff;--ap-ring:#1764b720;
+ --border-strong:#bdcfe5;--text-3:#7184a1;color-scheme:light;
+}
+html[data-alireza-theme="ember"] .bo-main{
+ background:radial-gradient(ellipse at 90% 0,#59d7ff0a,transparent 42%),radial-gradient(ellipse at 5% 30%,#9f8aff08,transparent 40%),var(--ap-bg);min-width:0;
+}
+html[data-alireza-theme="ember"] .bo-rail{background:linear-gradient(175deg,var(--ap-raised),var(--ap-surface) 48%);box-shadow:4px 0 28px #0000000a}
+html[data-alireza-theme="ember"] .bo-rail-item.is-active{border-color:var(--ap-orange);box-shadow:inset 0 0 20px var(--ap-ring)}
+html[data-alireza-theme="ember"] .bo-topbar{background:var(--ap-surface);position:relative}
+html[data-alireza-theme="ember"] .bo-topbar::after{content:"";position:absolute;bottom:0;inset-inline:20px;height:1px;background:linear-gradient(90deg,transparent,var(--ap-orange),transparent);opacity:.3}
+html[data-alireza-theme="ember"] :is(.bo-tile,.ant-card){background:linear-gradient(145deg,var(--ap-raised),var(--ap-surface) 50%);border:1px solid var(--ap-border);box-shadow:0 7px 25px #0000000d,inset 0 1px 0 #ffffff06}
+html[data-alireza-theme="ember"] .bo-tile{position:relative;overflow:hidden}
+html[data-alireza-theme="ember"] .bo-tile::after{content:"";position:absolute;pointer-events:none;inset-block-start:0;inset-inline:18px;height:2px;background:linear-gradient(90deg,var(--ap-orange),#a397ff,transparent);opacity:.55}
+html[data-alireza-theme="ember"] .ant-card-head{border-color:var(--ap-border);padding-block:6px}
+html[data-alireza-theme="ember"] .ant-table{background:var(--ap-surface);color:var(--ap-text)}
+html[data-alireza-theme="ember"] .ant-table-thead>tr>th{background:var(--ap-raised)!important;color:var(--ap-muted);border-color:var(--ap-border);font-size:12px;font-weight:650;padding-block:16px}
+html[data-alireza-theme="ember"] .ant-table-tbody>tr>td{border-color:var(--ap-border);padding-block:15px}
+html[data-alireza-theme="ember"] .ant-table-tbody>tr:nth-child(even){background:#7b9fc805}
+html[data-alireza-theme="ember"] .ant-table-tbody>tr:hover>td{background:var(--ap-orange-soft)!important}
+html[data-alireza-theme="ember"] :is(.ant-input,.ant-select-selection,.ant-input-number){border-radius:10px;background:var(--ap-surface);border-color:var(--ap-border);color:var(--ap-text)}
+html[data-alireza-theme="ember"] :is(.ant-modal-content,.ant-modal-header){background:var(--ap-surface);border-color:var(--ap-border);color:var(--ap-text)}
+html[data-alireza-theme="ember"] .ant-modal-content{border:1px solid var(--ap-border);border-radius:20px;box-shadow:0 25px 90px #0006}
+html[data-alireza-theme="ember"] :is(.ant-modal-title,.ant-modal-close){color:var(--ap-text)}
+html[data-alireza-theme="ember"] #app.login-app{background:radial-gradient(ellipse at 25% 15%,#59d7ff15,transparent 48%),radial-gradient(ellipse at 95% 90%,#a395ff18,transparent 50%),var(--ap-bg)}
+html[data-alireza-theme="ember"] #app.login-app .lgt-card{background:linear-gradient(140deg,var(--ap-raised),var(--ap-surface) 60%);border:1px solid var(--ap-border);border-top:3px solid var(--ap-orange);border-radius:26px;box-shadow:0 28px 90px #0004,0 0 0 7px #79cfff05;padding:32px}
+html[data-alireza-theme="ember"] #app.login-app .lgt-stage{max-width:460px}
+html[data-alireza-theme="ember"] #app.login-app .lgt-submit{background:linear-gradient(115deg,var(--ap-orange),#88a5ff);min-height:48px;box-shadow:0 7px 24px var(--ap-ring);color:var(--ap-on-orange)}
+html[data-alireza-theme="ember"] #app.login-app .lgt-control{background:var(--ap-bg);border-color:var(--ap-border);border-radius:12px}
+html[data-alireza-theme="ember"] #app.login-app .lgt-control:focus-within{border-color:var(--ap-orange);box-shadow:0 0 0 3px var(--ap-ring)}
+html[data-alireza-theme="ember"] :is(.ap-workspace,.ap-admin-guide,.ap-access-card){color:var(--ap-text);font:inherit;min-width:0}
+.ap-hero,.ap-admin-guide{border:1px solid var(--ap-border);border-radius:22px;padding:clamp(20px,3vw,36px);margin-bottom:24px;background:linear-gradient(115deg,var(--ap-raised),var(--ap-surface));box-shadow:0 10px 30px #0000000c}
+.ap-hero>span,.ap-eyebrow{font-size:11px;font-weight:700;letter-spacing:1.8px;color:var(--ap-orange)}
+.ap-hero h1{font-size:clamp(24px,3vw,38px);line-height:1.4;margin-block:12px}
+.ap-hero p,.ap-admin-guide p{color:var(--ap-muted);max-width:760px;line-height:1.9}
+.ap-filter-controls{display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin-bottom:20px}
+.ap-filter-controls label{flex:1;min-width:180px;color:var(--ap-muted);font-size:12px}
+.ap-filter-controls input{flex:2;min-width:200px}
+.ap-filter-controls select,.ap-filter-controls input{display:block;padding:12px;border:1px solid var(--ap-border);border-radius:10px;background:var(--ap-surface);color:var(--ap-text);font:inherit;width:100%}
+.ap-policy-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(270px,100%),1fr));gap:16px}
+.ap-policy-card{background:var(--ap-surface);padding:24px;border:1px solid var(--ap-border);border-radius:18px;box-shadow:0 8px 22px #00000008;min-width:0}
+.ap-policy-card h3{margin-block:12px 22px;font-size:17px;overflow-wrap:anywhere}
+.ap-action,.ap-workspace button{display:inline-block;background:var(--ap-orange-soft);border:1px solid var(--ap-border);padding:10px 16px;border-radius:10px;color:var(--ap-orange);font:inherit;cursor:pointer;text-decoration:none}
+.ap-action:hover,.ap-workspace button:hover{border-color:var(--ap-orange);box-shadow:0 0 0 3px var(--ap-ring)}
+.ap-access-card{max-width:700px;margin:10vh auto;padding:32px;border:1px solid var(--ap-border);border-radius:24px;background:var(--ap-surface);line-height:1.9}
+.alireza-policy-dialog{color:var(--ap-text);background:var(--ap-surface);border-color:var(--ap-border);box-shadow:0 30px 100px #0008;border-radius:22px;max-height:90dvh;overflow:auto}
+.alireza-policy-dialog label{padding:10px 12px;background:var(--ap-raised);border:1px solid var(--ap-border);border-radius:10px;margin-block:9px}
+.alireza-policy-dialog :is(input:not([type=checkbox]),textarea){max-width:100%;box-sizing:border-box;background:var(--ap-bg);color:var(--ap-text);border-color:var(--ap-border)}
+.alireza-policy-dialog button{background:var(--ap-orange-soft);color:var(--ap-orange);border-color:var(--ap-border)}
+html[data-alireza-theme="ember"] #alireza-node-picker{background:var(--ap-surface)!important;color:var(--ap-text)!important;border-color:var(--ap-border)!important;box-shadow:0 8px 24px #00000008}
+html[data-alireza-theme="ember"] #alireza-node-select{background:var(--ap-raised)!important;color:var(--ap-text)!important;border-color:var(--ap-border)!important}
+html[data-alireza-theme="ember"] #alireza-node-picker a{color:var(--ap-orange)!important}
+html[data-alireza-theme="ember"] body:has(#nodes-list){background:var(--ap-bg);color:var(--ap-text)}
+html[data-alireza-theme="ember"] body:has(#nodes-list) .card{background:linear-gradient(145deg,var(--ap-raised),var(--ap-surface));border-color:var(--ap-border);box-shadow:0 8px 25px #0000000a}
+html[data-alireza-theme="ember"] body:has(#nodes-list) :is(input,select,textarea){background:var(--ap-bg);color:var(--ap-text);border-color:var(--ap-border)}
+html[data-alireza-theme="ember"] body:has(#nodes-list) button{background:var(--ap-orange-soft);color:var(--ap-orange);border-color:var(--ap-border)}
+@media(max-width:700px){.ap-filter-controls>*{flex-basis:100%}.ap-access-card{margin:8vh 14px;padding:22px}.ap-hero{padding:22px}html[data-alireza-theme="ember"] #app.login-app .lgt-card{padding:26px 22px}html[data-alireza-theme="ember"] .bo-content{padding-inline:14px}html[data-alireza-theme="ember"] .ant-table-content{overflow-x:auto}html[data-alireza-theme="ember"] .ant-modal{max-width:calc(100vw - 24px);margin:12px auto}.alireza-policy-dialog{width:calc(100vw - 28px);padding:20px}}
+
+html[data-alireza-theme="ember"] body:has(#nodes-list) a.btn{color:var(--ap-orange)!important;background:var(--ap-orange-soft);border-color:var(--ap-border)}
+html[data-alireza-theme="ember"] #alireza-nodes{height:calc(100dvh - 120px);min-height:480px;border-radius:18px;background:var(--ap-bg)}
+@media(max-width:600px){html[data-alireza-theme="ember"] #alireza-nodes{height:calc(100dvh - 100px);min-height:420px}}
+html[data-alireza-theme="ember"] body{--font-sans:system-ui,-apple-system,BlinkMacSystemFont,"Vazirmatn","Segoe UI",sans-serif}
 ALIREZAPANEL_EMBEDDED_3_EOF
 
 cat > "$STAGE/logo.svg" <<'ALIREZAPANEL_EMBEDDED_4_EOF'
@@ -1508,468 +1630,51 @@ cat > "$STAGE/logo.svg" <<'ALIREZAPANEL_EMBEDDED_4_EOF'
 ALIREZAPANEL_EMBEDDED_4_EOF
 
 cat > "$STAGE/README.txt" <<'ALIREZAPANEL_EMBEDDED_5_EOF'
-alirezapanel 1.5.0
-=================
+alirezapanel 2.8.0 — vpn-ui + native AdGuard Home
 
-One online installer. Full upstream VPN-UI v1.9.4 and AdGuard Home v0.107.79
-executables; no features are compiled out. The real AdGuard interface is shown
-inside the VPN sidebar through an authenticated same-origin iframe. Both web
-interfaces receive the alirezapanel display name. Internal filenames, protocols,
-API keys, upstream URLs and license notices retain their original names.
+Commands: alirezapanel info | credentials | password | check | status |
+restart | logs | backup | resources | paths | ssl | vpn | help
 
-EMBER UI (1.1)
-Orange and charcoal styling for both complete interfaces: navigation, dashboard
-cards, forms, tables and dialogs. Status and destructive-action colors retain
-their meaning. Native light-mode controls remain available with a matching warm
-palette. No external fonts, continuous animations or blur effects are added.
-On a previous installation run: sudo bash install.sh --repair
-Repair preserves settings and takes a backup; services pause during repair.
+Upgrade the master and all nodes with: sudo bash install.sh --repair
+Back up first with: sudo alirezapanel backup
+Repair also creates a stopped-service snapshot, including config, VPN, AdGuard,
+Gateway, node state, systemd units and CLI under /var/backups/alirezapanel.
 
-SUPPORTED TARGET
-Debian 12/13 or Ubuntu 24.04, x86_64/amd64, systemd, a fresh server with at least
-512 MiB RAM (1 GiB recommended) and 2 GiB free disk space. GitHub and distribution package
-repositories must be reachable. VPN-UI's released bundle is about 346 MB. No Go,
-Node, npm, Docker or on-server source compilation is needed for the panel itself.
-Some optional protocols (notably AmneziaWG) still need upstream kernel module
-compilation/packages when enabled. Protocol compatibility remains upstream's.
+Nodes: enable HTTPS, copy the destination connection package/token from Nodes,
+then enroll it on the master. Choose the destination in Inbounds/Clients/Core.
+Tokens are retained across repair. Do not disclose connector credentials/tokens.
+Public CA trust and pinned self-signed trust remain distinct; replacement of a
+self-signed certificate requires reconnecting the node.
 
-INSTALL
-  sudo bash install.sh
-  sudo env ALIREZA_HOST=panel.example.com bash install.sh
+Admins use the normal public panel login URL and its private path. Grant at least
+one page permission and the intended inbound grants. A no-page-permission account
+gets an access notice with logout; privileges are never increased implicitly.
 
-Your HTTPS URL is printed when installation completes. Default port: 8443.
-Display initial credentials with: sudo alirezapanel credentials
-Change the password and enable two-factor authentication in the VPN admin UI.
-Generated initial credentials remain in /etc/alirezapanel/access.json (0600).
-That file is only an initial recovery record, not a password synchronization file.
+DNS now opens native AdGuard only. No AdGuard branding, CSS or settings changes
+are made by this redesign. The old panel DNS client UI is retired, but existing
+state and managed DoH links are preserved. Fresh installs omit that subsystem.
 
-TLS / AUTOMATIC RENEWAL
-The terminal wizard offers domain + trusted SSL, public IP + trusted SSL,
-self-signed HTTPS, or explicit HTTP. HTTPS defaults to 8443, leaving 443 free
-for an inbound. Trusted IP certificates use Certbot 5.4.0 when the distro's CLI
-is too old. This isolated command-line runtime adds no resident process.
-HTTP-01 requires TCP port 80 reachable from the internet during issuance AND
-renewal. Domain A/AAAA records must reach this server. If port 80 is already in
-use, the installer stops with an explanation and never stops another webserver.
-Use the native SSL manager's DNS challenge for that deployment topology.
+Content filters has its own sidebar page. Choose the target server and a saved
+account; settings are read/applied through the existing Xray policy API. Native
+protocols remain intact. Policies support Xray VLESS/VMess/Trojan/Shadowsocks.
+Applying core settings may briefly interrupt connections. Domain/category
+coverage and UDP gaming improvement are not guaranteed.
 
-  sudo alirezapanel ssl             Configure or change trusted public SSL
-  sudo alirezapanel ssl status      Certificate expiry, paths and renewal mode
-  sudo alirezapanel ssl renew       Check renewal now (does not force reissuance)
-  systemctl status alirezapanel-cert-renew.timer
-  journalctl -u alirezapanel-cert-renew.service
+HTTPS, TLS inbound forms and certificate renewals remain. Use alirezapanel ssl.
 
-Renewal is checked every six hours (with jitter), including six-day IP certs.
-The stable certificate/key paths are /etc/alirezapanel/tls/cert.pem and key.pem.
-The native inbound form offers the alirezapanel certificate and "Default cert".
-For new TLS inbounds an empty file-certificate pair is filled automatically
-when a trusted alirezapanel certificate is available; a blank domain SNI is
-filled with its hostname. Existing or custom certificates are preserved.
-Otherwise select the certificate and use a hostname/SNI covered by it.
-Existing inbounds, custom certificates, Reality keys and non-TLS protocols are
-never silently converted. OpenVPN's client CA and device keys are NOT replaced.
-Panel TLS reload keeps node sessions alive. VPN is restarted only if a live
-inbound or native web/subscription listener consumes the renewed certificate;
-that restart briefly interrupts traffic and preserves all saved protocol data.
-Externally supplied certs are not automatically enrolled into ACME.
-Self-signed mode is deliberately labelled untrusted; issuance failure never
-silently falls back to self-signed. No trust bypass is added to client configs.
+Target: 1 vCPU / 1 GiB for the base installation. Go heap limits are soft targets,
+not total RAM or user-capacity guarantees. No additional daemon/build chain is
+installed. Fallback dashboard polling is bounded and pauses in hidden pages.
+Versioned assets are cached. Access log rotation remains in place.
 
-ONE LOGIN / ACCESS
-Log into the VPN panel normally, including its existing 2FA. Only super admins
-see DNS; delegated administrators/resellers cannot change a server-wide resolver.
-Every DNS request is authorized again by VPN-UI's own super-admin endpoint. The
-gateway never decodes cookies itself and never gives the private AdGuard password
-or cookie to a browser. Logout in the DNS interface logs out of the VPN session.
+Validation: shell/Python syntax, regression/DOM tests and two real pinned local
+VPN panels with HTTPS node gateways passed. Real Chromium in the development
+environment exited with SIGTRAP: mobile/desktop visual QA is pending. No complete
+systemd/ACME/kernel/AdGuard deployment or 1 GiB memory/load measurement was done.
+Do not treat this as certification that every protocol/service fits any load.
 
-DEFAULT PORTS
-  8443 TCP          Unified HTTPS interface, public (configurable)
-  18080 TCP         VPN web backend, loopback only
-  18081 TCP         AdGuard HTTP backend, loopback only
-  53 TCP and UDP     AdGuard DNS resolver, primary server IPv4
-systemd-resolved and resolv.conf are not modified. AdGuard binds the detected
-server IPv4 instead of localhost or 0.0.0.0:53 to avoid resolver conflicts.
-The hosting firewall must permit the HTTPS port, TCP/UDP 53 for public DNS, and
-any VPN ports you enable.
-
-DNS AND VPN / TUNNEL COMPATIBILITY
-The original Xray template, routing rules, outbounds, firewall and tunnel
-configuration are preserved. No global DNS interception or traffic redirection
-is inserted. This avoids silently overriding split routing, SSH/VPN outbounds,
-private networks and per-account routing/limits. DNS and VPN are both installed
-and managed in one interface. AdGuard listens directly on TCP/UDP port 53 at
-the primary IPv4 address detected on the server. Xray and native clients can use
-the server's reachable/public IP as their DNS server on port 53. No loopback DNS
-listener and no alternate DNS port are created. If the VPS provider uses NAT,
-use the provider's public IP and make sure TCP/UDP 53 is forwarded to the server.
-Create users/inbounds and provision the protocols you want in VPN-UI as usual.
-Client-side DNS that never enters the tunnel, third-party DoH/DoT, and programs
-using their own encrypted DNS are not forcibly intercepted by this integration.
-Query attribution may show the proxy/loopback client instead of each VPN user.
-Test your selected client/protocol's DNS path in the DNS query log.
-
-ADGUARD SETTINGS
-All native dashboard, query log, statistics, filters, allowlists, rewrites,
-blocked services, client settings, DNS, encryption and DHCP screens are retained.
-DHCP and native encrypted-DNS listeners still require appropriate network/port
-configuration. They are not enabled automatically on a VPS. If you later connect
-an Xray/protocol DNS policy to AdGuard, keep it in sync with AdGuard's DNS listener.
-Exposing a native listener uses that listener's own AdGuard behavior, not the
-integrated gateway. Do not expose a recursive resolver to arbitrary Internet
-clients; configure allowed clients when enabling a public DNS listener.
-
-RESOURCE DEFAULTS
-AdGuard cache: 4 MiB, query-log memory buffer: 500 entries, log retention: 24h,
-statistics retention: 24h, concurrent DNS queries: 100. These are configurable
-in the original UI and are not deleted features. Go soft heap limits: VPN 300 MiB,
-AdGuard 160 MiB, with moderately more frequent garbage collection. These are NOT
-hard total-memory limits, do not include every child VPN daemon, and cannot
-guarantee fitting arbitrary traffic/filter lists into 1 GiB. Only enable needed
-VPN services and avoid enormous filter lists on a small machine. The Python
-gateway streams downloads/uploads and WebSockets instead of buffering them;
-only HTML is buffered (up to 8 MiB). No extra dashboard polling runs in the shell.
-Swap and global kernel settings are not modified. No 1-GiB load benchmark has
-been performed by the author in this Windows development environment.
-
-SETTINGS THAT HAVE TWO LAYERS
-VPN-UI and AdGuard retain their native configuration pages. The added public
-gateway's port/listen/certificate settings live in /etc/alirezapanel/gateway.json;
-restart alirezapanel after changing them. VPN-UI's web port is its INTERNAL port,
-not the public gateway port. Keep it bound to loopback. The gateway reads VPN
-port/base-path/certificate changes from the VPN database, but changing the VPN
-bind address to a public address can expose its native UI directly. The AdGuard
-HTTP socket is pinned by the service to loopback:18081 for shared authentication.
-This integration does not pretend the two original settings models became one.
-
-OPERATIONS
-  sudo alirezapanel info          URL and paths
-  sudo alirezapanel credentials   Initial credentials (root only)
-  sudo alirezapanel status        Service state
-  sudo alirezapanel check         Services, HTTPS, unauthorized access, DNS lookup
-  sudo alirezapanel logs          Recent service logs
-  sudo alirezapanel restart       Restart all three services
-  sudo alirezapanel backup        Consistent backup (briefly stops VPN/DNS)
-  sudo alirezapanel vpn info      Original VPN management CLI
-  sudo bash install.sh --repair   Backup, restore pinned binaries/integration,
-                                 preserve users and configuration
-
-Backups are root-only under /var/backups/alirezapanel. Repair does not reset
-passwords, regenerate certificates or replace DNS/filter/user configuration.
-Rerunning the normal install after success only displays installation info.
-No automatic migration of an existing standalone installation is attempted.
-
-UPDATES
-Upstream update controls remain present, but newer UI/API layouts may require
-an updated integration. Take a backup first and validate DNS access after an
-upstream update. The installer intentionally pins known versions/hashes instead
-of silently pulling latest. --repair refuses a detected version mismatch to
-avoid downgrading a migrated database. Use a matching integration/backup after
-upstream upgrades. No background integration auto-update runs.
-
-VALIDATION AND LIMITS
-The installer verifies the release SHA-256 hashes, compiles embedded Python,
-validates AdGuard configuration and systemd units, then tests HTTPS branding,
-anonymous DNS denial, initial shared admin login, the integrated shell, AdGuard
-status and a real DNS query. It reports success ONLY if those checks pass.
-Development verification for this revision uses local HTTP/HTTPS integration
-tests, a native-Vue DOM harness and the SHA-verified vpn-ui executable
-(login, connector promotion, node enrollment, inbound creation/edit, client
-identity preservation and real category-filter validation/core restart). Full Linux installation, kernel VPN protocols,
-all AdGuard settings flows and sustained low-memory performance remain unverified.
-The pinned AdGuard binary accepted the exact generated config/schema; its full
-service could not start in the test environment because /proc/self/exe is absent.
-Live panel TLS rotation was exercised while an existing TLS connection remained
-open, and the new certificate was verified on a fresh connection.
-
-SOURCE AND LICENSE
-See SOURCES.txt, LICENSE-vpn-ui.txt and LICENSE-AdGuardHome.txt in this directory.
-Original GPL licenses and author notices are retained. Integration source is
-embedded in install.sh and installed in /opt/alirezapanel/gateway, under GPL-3.0
-or later. alirezapanel is an independent integration of the upstream projects.
-
-1.2.0 INTEGRATION CHANGES
-- Fixed the HTTP login cookie's inappropriate Secure flag.
-- Kept the secret base path private at the public root (404).
-- Fixed compressed native login/catalog JSON being read as UTF-8; internal
-  sessions now explicitly request identity encoding, matching their streaming
-  no-decompression policy. This failure was reproduced against the pinned binary.
-- Node UI now includes the native Clients page and its APIs, plus core logs and
-  individual core restart/stop. System uninstall/reboot and unrelated settings
-  remain local-only. All original inbound forms and protocol generators remain.
-- Exact encoded queries, multipart bodies and binary downloads survive both
-  gateway hops. Node errors are returned in the native JSON error format.
-- Check/add verifies catalog access, not only the node's identity endpoint.
-- Service sessions are revalidated before node mutations without replaying writes.
-- Public-CA node enrollment verifies chain + hostname on every connection and
-  survives ordinary certificate renewal. Existing pins remain strict; reconnect
-  legacy entries once to opt into public-CA verification. Self-signed nodes must
-  be re-enrolled after certificate replacement.
-- New installs enable loopback-only native subscriptions. Links are exposed
-  through the panel's HTTPS gateway, including a unified multi-location link.
-  Existing subscription enable/port/listen settings and explicit subscription or
-  bridge URLs are preserved during repair. Custom native certificate defaults
-  are also preserved; the panel certificate remains a separate selectable option.
-- Combined subscription memory is bounded at 8 MiB. Unavailable sources fail
-  the refresh rather than silently removing a location from a user's profile.
-- Optional per-client ad/adult domain filtering uses native Xray user routing
-  rules and geosite datasets. Native config validation precedes save; a failed
-  core restart restores the previous template where no concurrent edit occurred.
-  The recovery checkpoint is in the private node state. MTProto is not supported
-  for this per-client feature. Domain blocking cannot identify every adult item,
-  IP-only flow or content hidden in encrypted DNS/ECH; DNS UI remains available.
-- Choose filters in the client form, then save the client. Account creation and
-  filter application are separate operations: if the latter fails, a visible
-  message says the client exists but filtering was NOT applied. Retry from the
-  Filter Client control. Existing accounts can be filtered from the same toolbar.
-- Client page spacing/controls are polished; dashboard layout, branding and
-  original navigation/button positions are preserved. No continuous new polling,
-  external fonts, large frontend framework or always-on worker was added.
-- Go memory targets scale with RAM. They are GC targets, not hard memory caps.
-  More protocols, geofiles and traffic need more memory; 512 MiB capacity is not
-  certified. Native cores remain opt-in; the installer adds no tunnel/firewall
-  redirection. Existing native tunnel options retain their original behavior.
-
-UPGRADE
-  sudo bash install.sh --repair
-Run the same version on the master and every node. A backup is made first;
-repair briefly stops the services. Then recheck nodes in the Nodes page.
-For trusted certificates created by an older installer, run `alirezapanel ssl`
-once if `ssl status` does not show automatic renewal configured.
-
-VALIDATION SCOPE
-The supplied installer is syntax-checked. Integration regression tests use real
-local HTTP/HTTPS connections against simulated APIs, with separate tests against
-the pinned native vpn-ui binary. Coverage includes:
-node enrollment, create/update client/inbound, multipart/query fidelity, binary
-exports, WebSocket, TLS defaults, filtering rollback and access revocation.
-This does not certify live ACME issuance, traffic for every VPN protocol, every
-hosting firewall/tunnel, or capacity on an actual 512 MiB VPS. Real browser
-rendering was not available in the build environment. Use `alirezapanel check`
-after deployment; inspect any failing service before exposing it to customers.
-
-DESIGN REFERENCES
-Nova-Server informed the simple node/client flow and certificate lifecycle ideas:
-https://github.com/IRNova/Nova-Server
-No Nova binary or background stack is installed. Upstream protocol code remains
-vpn-ui v1.9.4, SHA-256 pinned by this installer. Attribution/licenses are retained.
-Trusted IP ACME reference:
-https://letsencrypt.org/2026/03/11/shorter-certs-certbot
-
-
-MANAGED DNS CLIENTS (1.3)
-Open DNS in the existing sidebar. The Clients tab adds named DoH credentials,
-quota in DNS MESSAGE bytes (not HTTP overhead or website/download bandwidth),
-query-count limits, validity days, optional start on first successful query,
-fixed-IP restriction or first-successful-IP binding, native per-client adult / ad
-list / safe-search settings, custom tested upstreams, and saved creation presets.
-Bulk enable/disable, extension, counter reset and delete are available. Editing
-policy preserves expiry. Extension adds days to max(now, current expiry) and
-keeps counters / enable state. Rotate invalidates the old URL immediately.
-A failed native policy save leaves that managed client blocked until a successful
-save; it is shown as requiring review. No success is claimed after a failed write.
-
-Each managed client gets a separate native ClientID, unrelated to its public
-secret token. Its DoH URL is https://HOST:PANEL_PORT/dns-query/SECRET and stays
-valid when the panel's secret base path changes. QR and JSON configuration export
-are generated locally. The JSON is human-readable connection data, not a VPN
-subscription. Use the URL in a DoH-capable client. Android's system Private DNS
-box expects a DoT hostname and does not accept this URL. Use a DoH app instead,
-or configure native DoT separately without claiming managed quotas on it.
-Trusted SSL must match the URL host. The panel certificate and renewal mechanism
-also serve managed DoH on the same HTTPS listener. No additional cert service.
-
-LIMITS THAT MATTER
-- These quotas/expiry/IP restrictions apply ONLY to managed /dns-query/SECRET.
-  Existing plain DNS port 53 and separately enabled native DoT/DoQ remain intact
-  and do not use this quota engine. This does not force a device to use your DNS.
-- IP is a network address, not a hardware identifier. NAT shares it across devices;
-  mobile networks change it. A bearer link can be shared. First-IP binding requires
-  explicit unbind when networks change. We do not promise physical-device identity.
-- DNS upstream selection is real and tested for DNS responses. A third-party
-  Smart DNS / anti-sanction service must support the desired sites and may require
-  registration of this server's public IP. DNS alone does not change web egress IP.
-  Custom DNS services can see queries. No default third-party anti-sanction service
-  is silently added. Existing global fallback settings still belong to AdGuard.
-- Ad blocking requires at least one enabled, downloaded native blocklist and global
-  DNS protection enabled. The form checks this before saving. Use the Advanced tab
-  to configure lists. Adult filtering and Safe Search also require global protection.
-  Content filtering operates on domains; apps with independent DNS can bypass it.
-- Successful requests debit request + returned response bytes. Failed upstreams
-  debit inbound request bytes/count. Over-quota replies are withheld. Expiry and
-  first-IP activation start only on a returned valid DNS response. Already cached
-  answers on clients cannot be revoked. No user browsing payload passes this relay.
-
-LIGHTWEIGHT OPERATION
-No extra daemon, frontend framework, public lookup, remote font, background client
-poll or quota scheduler. The advanced native DNS UI loads on demand. DNS concurrency
-is capped at 8, each managed credential at 20 queries/sec with a 40-query burst.
-Requests are capped at 4 KiB, responses at 65535 bytes. DNS transfers/ANY are refused.
-Client search is paginated at 25 rows. Counters use SQLite WAL with NORMAL sync;
-process restarts retain committed counters, while unexpected power/storage loss can
-lose the last commits. This is not a financial billing ledger. 5000 stored clients
-is an administrative ceiling, NOT a capacity guarantee for a 512 MiB VPS. A single
-small server's measured workload determines usable capacity. Backups include the
-private DNS database within /var/lib/alirezapanel-nodes.
-
-TUNNELS / REVERSE PROXIES
-Forward /dns-query/* to the same HTTPS gateway, preserving its path and request
-body. TLS terminates at the gateway for this endpoint. Arbitrary X-Forwarded-For
-headers are ignored. When a trusted reverse proxy is needed, add only its exact
-CIDRs in gateway.json as dns_trusted_proxies, then restart the gateway. That proxy
-must overwrite/append actual peer information safely; never trust 0.0.0.0/0 or ::/0.
-A raw TCP tunnel can hide original client IP; bearer credentials still work but
-per-device IP binding is then not meaningful. Configure it accordingly.
-
-UPGRADE / CHECK
-sudo bash install.sh --repair
-sudo alirezapanel check
-sudo alirezapanel ssl status
-The installer enables private HTTP DoH only on AdGuard's loopback management
-listener while that service is stopped. The externally exposed managed endpoint
-requires HTTPS. --repair preserves existing clients, protocols and certificate
-configuration and creates the standard pre-upgrade backup. Existing nodes need the
-same repair update for new integration modules; each node's DNS clients are managed
-on that node's own panel, independently of VPN node control.
-
-1.3 VALIDATION
-Automated HTTPS relay tests cover native API adapters, DNS GET/POST bytes, quota
-concurrency, expiry, secret rotation, revoke during in-flight work, IP binding,
-forwarded-IP spoof rejection, policy failure recovery and restart persistence.
-DOM tests cover creation, exports, bulk revoke, safe text rendering, lazy advanced
-UI and dashboard isolation. The pinned native VPN executable is also exercised.
-AdGuard configuration is checked with its pinned executable. A complete live
-AdGuard run, public ACME issuance and VPS memory/load capacity must be verified on
-a real Linux host; this development sandbox does not expose /proc/self/exe.
-
-Inspiration, without copying Nova implementation or changing the panel identity:
-https://github.com/IRNova/Nova-Server (quick onboarding, saved plans, bulk actions)
-Native DNS API contract: AdGuard Home v0.107.79 openapi/openapi.yaml
-https://github.com/AdguardTeam/AdGuardHome/tree/v0.107.79
-
-
-PER-CLIENT POLICIES AND GAMING (1.4)
-The existing filter dialog now adds social-media categories, communication / messenger
-categories, YouTube, detectable BitTorrent, and up to 100 custom domain names.
-Custom domains include subdomains; wildcard/regex rules, URLs and IP addresses
-are deliberately not accepted by this simple editor. Existing ad/adult rules remain.
-Only explicitly provided fields change through the API; old clients updating ad/adult
-settings do not silently erase newer options. Domain lists use the installed geosite
-database and are validated by the native core. Categories can change with data updates.
-
-This dialog is supported for native Xray VLESS, VMess, Trojan and Shadowsocks users.
-Before enabling filtering, the integration checks inbound Sniffing: HTTP/TLS must be
-on and metadataOnly off. It does not silently change the shared inbound or its protocol.
-Unsupported cores / relay accounts are refused rather than displaying fictitious
-protection. If the same email is used on multiple inbounds, policy targets all such
-instances of that identity. Other clients are untouched. Native core restart may
-briefly reconnect active users when applying settings; reads do not restart it.
-
-Filters are real routing rules, not universal content inspection. Encrypted DNS,
-ECH, IP-only connections, unrecognized QUIC and encrypted/obfuscated torrents can
-limit detection. A domain block does not inspect every image, video or ad inside
-an otherwise allowed domain. Do not claim 100 percent coverage. A failing restart
-attempt restores the previous template when no concurrent edit has intervened.
-
-Gaming Mode is an explicit OPTIONAL DIRECT UDP EGRESS rule for one user:
-- Appends after all existing routes, preserving their precedence. Filters, explicit
-  tunnel routes, private-network blocks and other operator rules keep priority.
-- Only otherwise-unmatched UDP, excluding destination port 53, uses a small shared
-  freedom outbound. TCP stays on its existing route. This covers UDP generally;
-  it does not magically identify every game's packets.
-- Can avoid an unnecessary default outbound proxy hop. If the normal path is already
-  direct, it does not create a shorter path. A prior catch-all rule can prevent it
-  from taking effect. The UI explains both limits rather than promising lower ping.
-- UDP may leave using the server's own egress IP instead of a default chained proxy.
-  Services requiring that proxy's location may work differently. Normal OS-level
-  routes/tunnels still apply. The client app and inbound must carry UDP.
-- Existing custom outbounds are not modified. No CPU overclock, OS sysctl changes,
-  high-memory buffers, packet duplication, background probing, observatory, new
-  service, or kernel traffic shaping is added. Last-user disable removes the
-  integration's unused gaming outbound. A deny-by-default blackhole setup is refused.
-
-Resource target remains light usage on 1 vCPU / 1 GiB RAM. Each enabled policy adds
-only a few native routing entries (and category data already used by Xray); there is
-no per-user daemon. Actual concurrent users, protocols, category lists and throughput
-determine capacity. A literal guarantee for every cheap VPS or game latency is not
-possible without measuring that host and network path.
-
-1.4 VERIFICATION
-Actual pinned Xray tests send VLESS/TLS traffic for two separate users. Ad/adult,
-social, messenger, YouTube, custom domains (including subdomains), and BitTorrent
-handshake blocking are checked alongside an allowed control user. Real UDP echo
-checks per-user gaming routing, unchanged TCP/other users, and preservation of a
-higher-priority block rule. Test-only loopback exceptions allow local echo fixtures;
-no such exception is shipped in the production gaming outbound. Native panel tests
-also create/update a node inbound, apply/read back policies, and remove them again.
-Automated API/DOM regressions cover partial writes, rollback, tag conflicts,
-configuration preservation, checkbox queuing and node selection. No measured
-internet ping improvement is claimed.
-
-Routing reference: https://xtls.github.io/en/config/routing.html
-Pinned core schema: https://github.com/XTLS/Xray-core/tree/v26.4.17
-Upgrade with sudo bash install.sh --repair on master and nodes, then open
-Filter / Gaming in the client editor. Turn Gaming off to restore normal UDP routing.
-
-The new policy API advertises version 2. The UI verifies this on the selected node
-before writes; an older node cannot silently accept and ignore Gaming controls.
-A fresh template comparison also rejects edits detected before the save operation.
-
-SUBSCRIBER PAGE AND PER-USER CONNECTION LOGS (1.5)
-Browser visits to the gateway native-sub links or a combined subscription open a
-responsive Persian page with inline SVG usage charts, upload/download split,
-remaining quota, expiry, copy buttons, and native protocol-file downloads.
-Counters come directly from the native Subscription-Userinfo header. Unknown
-values stay unknown; a zero native quota means unlimited. These are current
-cumulative snapshots, not invented daily history. Combined profiles show each
-source independently, because quotas must not be added or double-counted.
-Application requests retain the original native bytes and metadata. The raw=1
-link forces raw output even when a browser sends Accept: text/html. OpenVPN,
-WireGuard, AmneziaWG and other native downloadable configurations are discovered
-from the authenticated-by-sub-ID native page; ownership is checked again by the
-native backend when downloading. Optional formats still depend on native settings
-and the protocol. Subscription pages are private, no-store, no-referrer, noindex,
-and use no external fonts, trackers, chart library or automatic refresh.
-
-Super-admins get a Log button beside each client and in the client editor. It
-opens recent Xray connection events for that exact email on the selected local
-server or node. It shows server time, source, destination, route and event, never
-message payloads. Identical prefixes do not match other clients. Protocols/cores
-that do not emit an Xray email identity are outside this viewer; the native core
-log tools remain available. Native DNS/AdGuard screens are unchanged in 1.5.
-
-Connection logging is opt-in: open a user's Log and choose Enable server logging.
-Xray writes one access log for the server; the viewer filters that log per user.
-Configuration is validated through the native API with a recovery checkpoint and
-rollback on restart failure. Enabling/disabling restarts Xray briefly. Disabling
-may also affect native IP-limit features that depend on access logs. Existing
-custom log destinations are never overwritten automatically. Readable custom logs
-must be under /var/log/vpn-ui or /opt/alirezapanel/vpn/logs. Managed logs are root
-owned and group-readable only by the panel service. No pre-enable history exists.
-
-The reader examines at most six 512 KiB tail slices per request, returns at most
-200 recent rows, permits two simultaneous reads, and performs blocking disk work
-outside the gateway event loop. There is no polling or new resident monitoring
-process. A low-priority systemd timer invokes logrotate every five minutes for the
-managed access log and the native recent archives, rotating at 4 MiB with one
-previous copy each. This is a periodic retention threshold, not a hard disk quota;
-busy logs can exceed it between checks. Copy-truncate rotation and native hourly
-archiving can race, so this diagnostic view is not a complete audit archive.
-
-Upgrade the main server AND nodes with sudo bash install.sh --repair. Legacy
---enable-nodes only updates the node bridge and subscriber renderer; use --repair
-for the new logging API, buttons, permissions, and rotation units.
-
-1.5 VERIFICATION
-Pinned native panel: real node login, inbound creation/update, logging config
-validation/restart/readback, browser subscription rendering and untouched raw
-Subscription-Userinfo headers. Pinned Xray: actual VLESS/TLS and UDP traffic,
-per-user access-log parsing, exact identity isolation, and existing filter/gaming
-regressions. API tests cover permissions, rollback, custom-log protection,
-read bounds, unknown/missing stats, private page headers, HTML escaping, remote
-sources and native file-download byte preservation. DOM tests cover Vue row
-binding, selected-node requests, log toggles, safe text, copy buttons, no polling,
-and preservation of the DNS interface. Syntax checks cover every embedded module.
-A full installation/load test on a physical 1 GiB VPS was not performed here.
+Full source, upgrade/rollback and validation docs are in the alirezapanel GitHub
+repository. The integration is GPL-3.0-or-later; upstream attribution is retained.
 ALIREZAPANEL_EMBEDDED_5_EOF
 
 cat > "$STAGE/LICENSE-vpn-ui.txt" <<'ALIREZAPANEL_EMBEDDED_6_EOF'
@@ -3029,7 +2734,7 @@ class Nodes:
         if not request.path.startswith(base): return None
         tail=request.path[len(base):]
         if tail=='_alireza/nodes.js':
-            return web.FileResponse(self.g.root/'nodes.js',headers={'Cache-Control':'no-cache'})
+            return web.FileResponse(self.g.root/'nodes.js',headers={'Cache-Control':'public,max-age=86400,immutable' if request.query.get('v') == '2.8.0' else 'no-cache'})
         if tail.startswith('_alireza/remote/'):
             await self.admin(request)
             parts=tail[len('_alireza/remote/'):].split('/',1)
@@ -3048,7 +2753,7 @@ class Nodes:
                 'Cookie':request.headers.get('Cookie',''),'Host':request.host,'Accept-Encoding':'identity'},allow_redirects=False) as response:
                 if response.status!=200: raise web.HTTPBadGateway()
                 page=self.g.dns_shell((await bounded(response)).decode(),base)
-            page=page.replace('alirezapanel · DNS','alirezapanel · Nodes').replace('id="alireza-dns"','id="alireza-nodes"')
+            page=page.replace('alirezapanel · DNS','alirezapanel · Nodes').replace('id="alireza-dns"','id="alireza-nodes"').replace('title="alirezapanel DNS · تنظیمات پیشرفته"','title="alirezapanel · Nodes"')
             page=page.replace('src="'+html.escape(base+'dns/',quote=True)+'"','src="'+html.escape(base+'_alireza/nodes-ui',quote=True)+'"')
             return web.Response(text=page,content_type='text/html',headers={'Cache-Control':'no-store'})
         if tail=='_alireza/nodes-ui':
@@ -3169,6 +2874,9 @@ class Nodes:
         headers['Authorization']='Bearer '+node['token']
         headers['X-Alirezapanel-Request']='1'
         headers['Accept-Encoding']='identity'
+        language=request.cookies.get('lang','')
+        if re.fullmatch(r'[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})?',language):
+            headers['Accept-Language']=language.replace('_','-')
         tls=node_tls(node)
         if request.headers.get('Upgrade','').lower()=='websocket':
             return await self.channel(ident,self.g.websocket(request,target,headers,self.remote,tls))
@@ -3179,6 +2887,9 @@ class Nodes:
                 out.popall(key,None)
             out['Cache-Control']='no-store'
             out['Referrer-Policy']='no-referrer'
+            if response.status in (401,403):
+                await bounded(response)
+                raise web.HTTPBadGateway(text='Node authorization failed. Re-enable its connector and reconnect its token; the operation was not replayed.')
             if 300<=response.status<400:
                 raise web.HTTPBadGateway(text='Node session or path changed. Recheck the node connection.')
             typ=response.headers.get('Content-Type','').lower()
@@ -3206,7 +2917,11 @@ class Nodes:
         old=match[2]
         # Rewrite only UI resource and navigation paths. Embedded configuration
         # values, share links, host addresses and API JSON remain unchanged.
-        body=re.sub(r"(['\"])"+re.escape(old)+r"(?=(?:assets/|panel/|logout/|_alireza/))",lambda m:m[1]+mount,body)
+        body=re.sub(r'(\b(?:src|href|action)\s*=\s*)([\'\"])(.*?)\2',
+            lambda m: m[1]+m[2]+(mount+m[3][len(old):] if m[3].startswith(old) and
+                m[3][len(old):].startswith(('assets/','panel/','logout/','_alireza/')) else m[3])+m[2], body)
+        body=re.sub(r"(\b(?:key|requestUri|basePath)\s*:\s*)(['\"])(.*?)\2",
+            lambda m: m[1]+json.dumps(mount+m[3][len(old):]) if m[3].startswith(old) else m[0],body)
         body=body.replace(match[0],'const basePath = '+json.dumps(mount)+';',1)
         body=re.sub(r'window\.ALIREZA=\{.*?\};',lambda m:'window.ALIREZA='+json.dumps({'base':master,'dns':False,'node':ident,'mount':mount})+';',body,count=1)
         # Brand/theme are provided by the main panel and are not agent API routes.
@@ -3429,6 +3144,7 @@ cat > "$STAGE/nodes.js" <<'NODE_EMBEDDED_JS_EOF'
 /* Node selector: additive UI only; all native forms and handlers remain intact. */
 (() => {
   'use strict';
+  const tx=(fa,en)=>document.documentElement.lang.startsWith('en')?en:fa;
   const config=window.ALIREZA;
   if (!config || config.dns || typeof PERMS==='undefined' || !PERMS.superAdmin) return;
   const base=config.base;
@@ -3444,7 +3160,7 @@ cat > "$STAGE/nodes.js" <<'NODE_EMBEDDED_JS_EOF'
       });
     }
     if(!component.tabs.some(t=>t.key===base+'panel/nodes'))
-      component.tabs.splice(component.tabs.length-1,0,{key:base+'panel/nodes',icon:'cluster',title:'نودها / Nodes'});
+      component.tabs.splice(component.tabs.length-1,0,{key:base+'panel/nodes',icon:'cluster',title:tx('نودها','Nodes')});
     if(location.pathname.replace(/\/$/,'')===base+'panel/nodes') component.requestUri=base+'panel/nodes';
   }
   if(!/\/panel\/(inbounds|clients|core)\/?$/.test(location.pathname)) return;
@@ -3453,12 +3169,12 @@ cat > "$STAGE/nodes.js" <<'NODE_EMBEDDED_JS_EOF'
   const bar=document.createElement('div');
   bar.id='alireza-node-picker';
   bar.style.cssText='display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 18px;margin-bottom:18px;border:1px solid #493323;background:#211b17;color:#ffe4cf;border-radius:12px';
-  const label=document.createElement('label');label.textContent='سرور / Server';label.htmlFor='alireza-node-select';
+  const label=document.createElement('label');label.textContent=tx("سرور / Server","سرور / Server");label.htmlFor='alireza-node-select';
   const select=document.createElement('select');select.id='alireza-node-select';
   select.style.cssText='background:#18181c;color:#fff;border:1px solid #795036;border-radius:8px;padding:8px;min-width:190px';
-  const link=document.createElement('a');link.href=base+'panel/nodes';link.textContent='مدیریت نودها';link.style.color='#ff963f';
+  const link=document.createElement('a');link.href=base+'panel/nodes';link.textContent=tx("مدیریت نودها","Manage nodes");link.style.color='#ff963f';
   const status=document.createElement('span');status.style.fontSize='13px';status.setAttribute('role','status');
-  select.add(new Option('همین سرور / Local','local'));
+  select.add(new Option(tx("همین سرور / Local","Local server"),'local'));
   select.disabled=true;
   bar.append(label,select,link,status);main.prepend(bar);
   fetch(base+'_alireza/nodes/list',{credentials:'same-origin',cache:'no-store'})
@@ -3466,10 +3182,10 @@ cat > "$STAGE/nodes.js" <<'NODE_EMBEDDED_JS_EOF'
     .then(data=>{
       for(const node of data.nodes) select.add(new Option(node.name,node.id));
       select.value=config.node || 'local';select.disabled=false;
-      status.textContent=config.node?'تغییرات این صفحه فقط روی نود انتخاب‌شده ذخیره می‌شوند.':'تغییرات این صفحه روی همین سرور ذخیره می‌شوند.';
-    }).catch(()=>{status.textContent='فهرست نودها در دسترس نیست؛ مدیریت محلی همچنان فعال است.';});
+      status.textContent=config.node?tx("تغییرات این صفحه فقط روی نود انتخاب‌شده ذخیره می‌شوند.","Changes on this page are saved only on the selected node."):tx("تغییرات این صفحه روی همین سرور ذخیره می‌شوند.","Changes on this page are saved on this server.");
+    }).catch(()=>{status.textContent=tx("فهرست نودها در دسترس نیست؛ مدیریت محلی همچنان فعال است.","Node list unavailable; local management remains available.");});
   select.addEventListener('change',()=>{
-    if(!window.confirm('با تغییر سرور، تغییرات ذخیره‌نشدهٔ فرم کنار گذاشته می‌شوند. ادامه می‌دهی؟')) {
+    if(!window.confirm(tx("با تغییر سرور، تغییرات ذخیره‌نشدهٔ فرم کنار گذاشته می‌شوند. ادامه می‌دهی؟","Changing servers discards unsaved form changes. Continue?"))) {
       select.value=config.node || 'local';return;
     }
     window.location.assign(select.value==='local'?base+'panel/'+location.pathname.split('/').filter(Boolean).pop():base+'_alireza/remote/'+encodeURIComponent(select.value)+'/panel/'+location.pathname.split('/').filter(Boolean).pop());
@@ -3480,43 +3196,50 @@ NODE_EMBEDDED_JS_EOF
 cat > "$STAGE/nodes.html" <<'NODE_EMBEDDED_HTML_EOF'
 <!doctype html>
 <html lang="fa" dir="rtl" data-alireza-theme="ember"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>alirezapanel · Nodes</title>
-<link rel="stylesheet" href="__BASE_ATTR___alireza/theme.css"><style>
+<link rel="stylesheet" href="__BASE_ATTR___alireza/theme.css?v=2.8.0"><style>
+@font-face{font-family:Vazirmatn;font-style:normal;font-weight:400;font-display:swap;src:url("__BASE_ATTR__assets/Vazirmatn-UI-NL-Regular.woff2") format("woff2")}
+body{font-family:system-ui,Vazirmatn,sans-serif!important}
 *{box-sizing:border-box}body{margin:0;background:#0e0e11;color:#f5f2ef;font:14px system-ui,sans-serif;line-height:1.9;padding:26px}main{max-width:1160px;margin:auto}h1,h2,p{margin-top:0}h1{font-size:27px;margin-bottom:3px}h2{font-size:18px}.muted{color:#b7b2ad}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.card{background:#18181c;border:1px solid #303037;border-radius:16px;padding:22px;margin:18px 0}.card .card{margin:10px 0;padding:15px}button,a.btn{background:#ff963f;color:#211208;border:1px solid #ff963f;border-radius:9px;padding:9px 15px;font:inherit;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block}button.secondary{background:#242126;color:#f5f2ef;border-color:#494049}button.danger{background:#372023;color:#ffb0b0;border-color:#603034}button:disabled{opacity:.5;cursor:wait}input,textarea,select{display:block;width:100%;background:#101013;color:#f5f2ef;border:1px solid #494149;border-radius:9px;padding:11px;font:inherit;margin:6px 0 14px}textarea{min-height:110px;resize:vertical;direction:ltr;font:12px monospace}input.code{direction:ltr;font:13px monospace}label{display:block}.row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.row>*{margin-block:0}#notice{position:sticky;top:0;z-index:2;padding:12px 16px;background:#34271d;border:1px solid #795036;border-radius:9px;white-space:pre-wrap}#notice:empty{display:none}.nodehead{display:flex;justify-content:space-between;gap:12px;align-items:center}.endpoint{direction:ltr;text-align:right;overflow-wrap:anywhere}.source{display:grid;grid-template-columns:1fr 1.5fr auto;gap:10px;align-items:center}.source select{margin:0}.badge{color:#ffb170;font-size:12px}summary{cursor:pointer;color:#ffb170}button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid #ffb170;outline-offset:3px}@media(max-width:700px){body{padding:14px}.grid{grid-template-columns:1fr}.source{grid-template-columns:1fr}.nodehead{align-items:start;flex-direction:column}}
 a.btn{color:#211208!important}a.btn:hover{color:#211208!important;background:#ffb170}
 </style></head><body><main>
 <div id="notice" role="status" aria-live="polite"></div>
-<h1>نودها و لوکیشن‌ها</h1><p class="muted">سرورهایت را از همین پنل مدیریت کن. هر سرور، اینباندها و تنظیمات مستقل خودش را دارد.</p>
-<div class="grid"><section class="card"><h2>افزودن یا اتصال مجدد نود</h2><p class="muted">در پنل سرور مقصد، «مشخصات اتصال این سرور» را باز کن و این دو مقدار را اینجا قرار بده.</p>
-<form id="add-form"><label for="certificate">گواهی اتصال</label><textarea id="certificate" required spellcheck="false" placeholder='{"version":1,"endpoint":"https://…","certificate":"…"}'></textarea><label for="token">API Token</label><input class="code" id="token" type="password" required autocomplete="off"><button type="submit">بررسی و افزودن نود</button></form><p class="muted">گواهی اتصال شامل آدرس و گواهی عمومی سرور است. گواهی معتبر عمومی با تمدید خودکار متصل می‌ماند. برای گواهی خودامضا، پس از تعویض گواهی اتصال را دوباره ثبت کن.</p></section>
-<section class="card"><h2>مشخصات اتصال این سرور</h2><p class="muted">این مشخصات را در پنل اصلی وارد کن تا این سرور به‌عنوان نود اضافه شود. اتصال نود به HTTPS نیاز دارد.</p><button id="identity">نمایش و کپی مشخصات</button>
-<div id="identity-fields" hidden><label for="my-cert">گواهی اتصال این سرور</label><textarea id="my-cert" readonly spellcheck="false"></textarea><button class="secondary" id="copy-cert">کپی گواهی</button><label for="my-token">API Token این سرور</label><input class="code" id="my-token" readonly type="password"><div class="row"><button class="secondary" id="copy-token">کپی توکن</button><button class="secondary" id="show-token">نمایش / پنهان</button></div></div>
-<details style="margin-top:18px"><summary>مدیریت دسترسی این نود</summary><p class="muted">با نمایش مشخصات، یک حساب اتصال اختصاصی در بخش ادمین‌ها ساخته می‌شود. توکن اجازهٔ مدیریت اینباندها را می‌دهد؛ آن را خصوصی نگه دار.</p><div class="row"><button class="secondary" id="rotate">ساخت توکن جدید</button><button class="danger" id="disable">قطع دسترسی نود</button></div></details></section></div>
-<section class="card"><div class="nodehead"><h2>سرورهای متصل</h2><button class="secondary" id="refresh">بازخوانی فهرست</button></div><div id="nodes-list"></div></section>
-<section class="card"><h2>اشتراک چند لوکیشن</h2><p class="muted">اشتراک‌های کاربر را از سرورهای دلخواه انتخاب کن تا یک لینک شامل کانفیگ همهٔ آن‌ها ساخته شود. این کار کاربر جدید نمی‌سازد و سهمیه یا تاریخ انقضای سرورها را تغییر نمی‌دهد.</p>
-<form id="profile-form"><label for="profile-name">نام اشتراک</label><input id="profile-name" placeholder="مثلاً اشتراک چند لوکیشن علی" maxlength="120"><div id="sources"></div><div class="row" style="margin:16px 0"><button type="button" class="secondary" id="add-source">افزودن سرور به اشتراک</button><button type="submit">ساخت لینک ترکیبی</button></div></form>
-<details><summary>فرمت‌ها و رفتار اشتراک</summary><p class="muted">خروجی Base64، آرایهٔ JSON برای Xray و Clash/Mihomo در دسترس است، به شرط پشتیبانی و فعال‌بودن همان فرمت روی سرورهای انتخاب‌شده. خروجی Clash ترکیبی یک گروه انتخاب سرور دارد؛ قوانین سفارشی هر نود در لینک اصلی آن حفظ می‌شود. فایل‌های اختصاصی OpenVPN و WireGuard از صفحهٔ اینباند همان نود قابل دریافت‌اند. اگر یک منبع قطع باشد، لینک ترکیبی خطا می‌دهد تا لیست ناقص جایگزین کانفیگ‌های کاربر نشود.</p></details>
+<h1 data-ap-en="Nodes and locations">نودها و لوکیشن‌ها</h1><p class="muted" data-ap-en="Manage your servers here. Each server keeps its own inbounds and settings.">سرورهایت را از همین پنل مدیریت کن. هر سرور، اینباندها و تنظیمات مستقل خودش را دارد.</p>
+<div class="grid"><section class="card"><h2 data-ap-en="Add or reconnect a node">افزودن یا اتصال مجدد نود</h2><p class="muted" data-ap-en="Open connection details on the target panel and enter its certificate package and token here.">در پنل سرور مقصد، «مشخصات اتصال این سرور» را باز کن و این دو مقدار را اینجا قرار بده.</p>
+<form id="add-form"><label for="certificate" data-ap-en="Connection certificate package">گواهی اتصال</label><textarea id="certificate" required spellcheck="false" placeholder='{"version":1,"endpoint":"https://…","certificate":"…"}'></textarea><label for="token">API Token</label><input class="code" id="token" type="password" required autocomplete="off"><button type="submit" data-ap-en="Check and add node">بررسی و افزودن نود</button></form><p class="muted" data-ap-en="The package includes the server URL and public certificate. Public CA certificates survive renewal; reconnect pinned self-signed certificates after replacement.">گواهی اتصال شامل آدرس و گواهی عمومی سرور است. گواهی معتبر عمومی با تمدید خودکار متصل می‌ماند. برای گواهی خودامضا، پس از تعویض گواهی اتصال را دوباره ثبت کن.</p></section>
+<section class="card"><h2 data-ap-en="This server’s connection details">مشخصات اتصال این سرور</h2><p class="muted" data-ap-en="Enter these details on the master panel to enroll this server. Nodes require HTTPS.">این مشخصات را در پنل اصلی وارد کن تا این سرور به‌عنوان نود اضافه شود. اتصال نود به HTTPS نیاز دارد.</p><button id="identity" data-ap-en="Show connection details">نمایش و کپی مشخصات</button>
+<div id="identity-fields" hidden><label for="my-cert" data-ap-en="This server’s certificate package">گواهی اتصال این سرور</label><textarea id="my-cert" readonly spellcheck="false"></textarea><button class="secondary" id="copy-cert" data-ap-en="Copy certificate package">کپی گواهی</button><label for="my-token" data-ap-en="This server’s API token">API Token این سرور</label><input class="code" id="my-token" readonly type="password"><div class="row"><button class="secondary" id="copy-token" data-ap-en="Copy token">کپی توکن</button><button class="secondary" id="show-token" data-ap-en="Show / hide">نمایش / پنهان</button></div></div>
+<details style="margin-top:18px"><summary data-ap-en="Manage access to this node">مدیریت دسترسی این نود</summary><p class="muted" data-ap-en="Showing details provisions a dedicated connector admin. Its token permits inbound management; keep it private.">با نمایش مشخصات، یک حساب اتصال اختصاصی در بخش ادمین‌ها ساخته می‌شود. توکن اجازهٔ مدیریت اینباندها را می‌دهد؛ آن را خصوصی نگه دار.</p><div class="row"><button class="secondary" id="rotate" data-ap-en="Rotate token">ساخت توکن جدید</button><button class="danger" id="disable" data-ap-en="Disable node access">قطع دسترسی نود</button></div></details></section></div>
+<section class="card"><div class="nodehead"><h2 data-ap-en="Connected servers">سرورهای متصل</h2><button class="secondary" id="refresh" data-ap-en="Refresh list">بازخوانی فهرست</button></div><div id="nodes-list"></div></section>
+<section class="card"><h2 data-ap-en="Multi-location subscriptions">اشتراک چند لوکیشن</h2><p class="muted" data-ap-en="Combine a user’s existing server subscriptions into one link. This does not create accounts or alter quotas or expiry dates.">اشتراک‌های کاربر را از سرورهای دلخواه انتخاب کن تا یک لینک شامل کانفیگ همهٔ آن‌ها ساخته شود. این کار کاربر جدید نمی‌سازد و سهمیه یا تاریخ انقضای سرورها را تغییر نمی‌دهد.</p>
+<form id="profile-form"><label for="profile-name" data-ap-en="Subscription name">نام اشتراک</label><input id="profile-name" placeholder="مثلاً اشتراک چند لوکیشن علی" maxlength="120"><div id="sources"></div><div class="row" style="margin:16px 0"><button type="button" class="secondary" id="add-source" data-ap-en="Add a source server">افزودن سرور به اشتراک</button><button type="submit" data-ap-en="Create combined link">ساخت لینک ترکیبی</button></div></form>
+<details><summary data-ap-en="Formats and subscription behavior">فرمت‌ها و رفتار اشتراک</summary><p class="muted" data-ap-en="Base64, Xray JSON and Clash/Mihomo are available when enabled on each source. Combined Clash uses a server selector; custom source rules remain on native links. Download OpenVPN and WireGuard files from the target inbound page. If any source is offline, the combined link fails rather than replacing your configurations with a partial list.">خروجی Base64، آرایهٔ JSON برای Xray و Clash/Mihomo در دسترس است، به شرط پشتیبانی و فعال‌بودن همان فرمت روی سرورهای انتخاب‌شده. خروجی Clash ترکیبی یک گروه انتخاب سرور دارد؛ قوانین سفارشی هر نود در لینک اصلی آن حفظ می‌شود. فایل‌های اختصاصی OpenVPN و WireGuard از صفحهٔ اینباند همان نود قابل دریافت‌اند. اگر یک منبع قطع باشد، لینک ترکیبی خطا می‌دهد تا لیست ناقص جایگزین کانفیگ‌های کاربر نشود.</p></details>
 <div id="profiles-list"></div></section>
 </main><script>
 'use strict';
 const base=__BASE_JSON__;let nodes=[];
+const parentLang=parent.document.documentElement.lang||'fa';
+document.documentElement.lang=parentLang;document.documentElement.dir=parent.document.documentElement.dir||'rtl';
+const english=parentLang.startsWith('en');const tr=(fa,en)=>english?en:fa;
+if(english){document.querySelectorAll('[data-ap-en]').forEach(el=>el.textContent=el.dataset.apEn);document.getElementById('profile-name').placeholder='Multi-location subscription';}
+
 const $=id=>document.getElementById(id);
 function notice(s){$('notice').textContent=s;}
 async function api(op,data){const r=await fetch(base+'_alireza/nodes/'+op,{method:data===undefined?'GET':'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-Alirezapanel-Request':'1'},body:data===undefined?undefined:JSON.stringify(data)});if(!r.ok){let t=await r.text();try{t=JSON.parse(t).msg||t;}catch(_){}throw Error(t.slice(0,400));}return r.json();}
-async function busy(button,fn){button.disabled=true;try{await fn();}catch(e){notice(e.message||'عملیات انجام نشد.');}finally{button.disabled=false;}}
-async function copy(value){try{await navigator.clipboard.writeText(value);notice('کپی شد.');}catch(_){notice('کپی خودکار در دسترس نیست؛ مقدار را انتخاب و دستی کپی کن.');}}
+async function busy(button,fn){button.disabled=true;try{await fn();}catch(e){notice(e.message||tr("عملیات انجام نشد.","Operation failed."));}finally{button.disabled=false;}}
+async function copy(value){try{await navigator.clipboard.writeText(value);notice(tr("کپی شد.","Copied."));}catch(_){notice('کپی خودکار در دسترس نیست؛ مقدار را انتخاب و دستی کپی کن.');}}
 function button(label,action,danger=false){const b=document.createElement('button');b.type='button';b.className=danger?'danger':'secondary';b.textContent=label;b.onclick=()=>busy(b,action);return b;}
 function el(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
-async function load(){const data=await api('list');nodes=data.nodes;const list=$('nodes-list');list.replaceChildren();if(!nodes.length)list.append(el('p','هنوز نودی اضافه نشده است.','muted'));for(const n of nodes){const card=el('article',undefined,'card');const head=el('div',undefined,'nodehead');const title=el('div');title.append(el('strong',n.name),el('div',n.endpoint,'endpoint muted'));const actions=el('div',undefined,'row');const link=el('a','اینباندهای این سرور','btn');link.href=base+'_alireza/remote/'+n.id+'/panel/inbounds';link.target='_top';const clients=el('a','کلاینت‌ها','btn');clients.href=base+'_alireza/remote/'+n.id+'/panel/clients';clients.target='_top';actions.append(link,clients,button('بررسی اتصال',async()=>{const d=await api('check',{id:n.id});notice('اتصال و دسترسی به '+n.name+' برقرار است؛ '+d.inbounds+' اینباند، '+d.clients+' اشتراک.');}),button('تغییر نام',async()=>{const name=prompt('نام سرور',n.name);if(name){await api('rename',{id:n.id,name});await load();}}),button('حذف اتصال',async()=>{if(confirm('اتصال '+n.name+' از این پنل حذف شود؟ اینباندهای نود حذف نمی‌شوند.')){await api('delete',{id:n.id});await load();}},true));head.append(title,actions);card.append(head);list.append(card);}const profiles=$('profiles-list');profiles.replaceChildren();for(const p of data.profiles){const card=el('article',undefined,'card');card.append(el('strong',p.name));const input=el('input');input.className='code';input.readOnly=true;input.value=p.url;card.append(input);const row=el('div',undefined,'row');row.append(button('کپی لینک',()=>copy(p.url)),button('کپی JSON',()=>copy(p.url+'/json')),button('کپی Clash',()=>copy(p.url+'/clash')),button('حذف اشتراک ترکیبی',async()=>{if(confirm('این لینک ترکیبی غیرفعال شود؟ اشتراک‌های اصلی حفظ می‌شوند.')){await api('delete-profile',{id:p.id});await load();}},true));card.append(row);profiles.append(card);}}
-$('add-form').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{await api('add',{certificate:$('certificate').value,token:$('token').value});$('token').value='';$('certificate').value='';await load();notice('نود متصل شد. از بخش اینباندها سرور را انتخاب کن.');});};
-$('identity').onclick=()=>busy($('identity'),async()=>{const d=await api('identity',{});$('my-cert').value=d.certificate;$('my-token').value=d.token||'';$('identity-fields').hidden=false;notice(d.token?'مشخصات آمادهٔ کپی است.':'دسترسی نود قطع است؛ برای فعال‌سازی «ساخت توکن جدید» را بزن.');});
+async function load(){const data=await api('list');nodes=data.nodes;const list=$('nodes-list');list.replaceChildren();if(!nodes.length)list.append(el('p',tr("هنوز نودی اضافه نشده است.","No nodes connected yet."),'muted'));for(const n of nodes){const card=el('article',undefined,'card');const head=el('div',undefined,'nodehead');const title=el('div');title.append(el('strong',n.name),el('div',n.endpoint,'endpoint muted'));const actions=el('div',undefined,'row');const link=el('a',tr("اینباندهای این سرور","Server inbounds"),'btn');link.href=base+'_alireza/remote/'+n.id+'/panel/inbounds';link.target='_top';const clients=el('a',tr("کلاینت‌ها","Clients"),'btn');clients.href=base+'_alireza/remote/'+n.id+'/panel/clients';clients.target='_top';actions.append(link,clients,button(tr("بررسی اتصال","Check connection"),async()=>{const d=await api('check',{id:n.id});notice('اتصال و دسترسی به '+n.name+' برقرار است؛ '+d.inbounds+' اینباند، '+d.clients+' اشتراک.');}),button(tr("تغییر نام","Rename"),async()=>{const name=prompt(tr("نام سرور","Server name"),n.name);if(name){await api('rename',{id:n.id,name});await load();}}),button(tr("حذف اتصال","Remove connection"),async()=>{if(confirm('اتصال '+n.name+' از این پنل حذف شود؟ اینباندهای نود حذف نمی‌شوند.')){await api('delete',{id:n.id});await load();}},true));head.append(title,actions);card.append(head);list.append(card);}const profiles=$('profiles-list');profiles.replaceChildren();for(const p of data.profiles){const card=el('article',undefined,'card');card.append(el('strong',p.name));const input=el('input');input.className='code';input.readOnly=true;input.value=p.url;card.append(input);const row=el('div',undefined,'row');row.append(button(tr("کپی لینک","Copy link"),()=>copy(p.url)),button(tr("کپی JSON","Copy JSON"),()=>copy(p.url+'/json')),button(tr("کپی Clash","Copy Clash"),()=>copy(p.url+'/clash')),button(tr("حذف اشتراک ترکیبی","Remove combined link"),async()=>{if(confirm(tr("این لینک ترکیبی غیرفعال شود؟ اشتراک‌های اصلی حفظ می‌شوند.","Disable this combined link? Native subscriptions will stay intact."))){await api('delete-profile',{id:p.id});await load();}},true));card.append(row);profiles.append(card);}}
+$('add-form').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{await api('add',{certificate:$('certificate').value,token:$('token').value});$('token').value='';$('certificate').value='';await load();notice(tr("نود متصل شد. از بخش اینباندها سرور را انتخاب کن.","Node connected. Select it on the Inbounds page."));});};
+$('identity').onclick=()=>busy($('identity'),async()=>{const d=await api('identity',{});$('my-cert').value=d.certificate;$('my-token').value=d.token||'';$('identity-fields').hidden=false;notice(d.token?tr("مشخصات آمادهٔ کپی است.","Connection details are ready to copy."):tr("دسترسی نود قطع است؛ برای فعال‌سازی «ساخت توکن جدید» را بزن.","Node access is disabled. Rotate the token to enable it."));});
 $('copy-cert').onclick=()=>copy($('my-cert').value);$('copy-token').onclick=()=>copy($('my-token').value);
 $('show-token').onclick=()=>{$('my-token').type=$('my-token').type==='password'?'text':'password';};
-$('rotate').onclick=()=>busy($('rotate'),async()=>{if(confirm('توکن قبلی فوراً غیرفعال می‌شود و باید نود را در پنل‌های اصلی دوباره متصل کنی. ادامه؟')){await api('rotate',{});$('identity').click();notice('توکن جدید ساخته شد.');}});
-$('disable').onclick=()=>busy($('disable'),async()=>{if(confirm('دسترسی تمام پنل‌های اصلی به این نود قطع شود؟')){await api('disable',{});$('my-token').value='';notice('دسترسی نود قطع شد؛ اینباندهای محلی همچنان فعال‌اند.');}});
+$('rotate').onclick=()=>busy($('rotate'),async()=>{if(confirm(tr("توکن قبلی فوراً غیرفعال می‌شود و باید نود را در پنل‌های اصلی دوباره متصل کنی. ادامه؟","The old token is revoked immediately. Reconnect this node on all master panels. Continue?"))){await api('rotate',{});$('identity').click();notice(tr("توکن جدید ساخته شد.","New token generated."));}});
+$('disable').onclick=()=>busy($('disable'),async()=>{if(confirm(tr("دسترسی تمام پنل‌های اصلی به این نود قطع شود؟","Revoke access from all master panels?"))){await api('disable',{});$('my-token').value='';notice(tr("دسترسی نود قطع شد؛ اینباندهای محلی همچنان فعال‌اند.","Node access revoked. Local inbounds remain active."));}});
 $('refresh').onclick=()=>busy($('refresh'),load);
-function sourceRow(){const row=el('div',undefined,'source card');const server=el('select');server.setAttribute('aria-label','سرور منبع');server.add(new Option('انتخاب سرور',''));server.add(new Option('همین سرور','local'));for(const n of nodes)server.add(new Option(n.name,n.id));const client=el('select');client.setAttribute('aria-label','اشتراک کاربر');client.add(new Option('ابتدا سرور را انتخاب کن',''));client.disabled=true;row.append(server,client,button('برداشتن',async()=>row.remove()));server.onchange=async()=>{const selected=server.value;client.replaceChildren(new Option('در حال دریافت…',''));client.disabled=true;if(!selected)return;try{const data=await api('catalog',{id:selected});if(server.value!==selected)return;client.replaceChildren(new Option('انتخاب اشتراک کاربر',''));for(const c of data.clients)client.add(new Option(c.name,c.id));client.disabled=false;if(!data.clients.length)notice('این سرور اشتراک کاربری ندارد؛ ابتدا در اینباندهای آن کاربر بساز.');}catch(e){if(server.value===selected)client.replaceChildren(new Option('دریافت ناموفق؛ سرور را دوباره انتخاب کن',''));notice(e.message);}};$('sources').append(row);}
+function sourceRow(){const row=el('div',undefined,'source card');const server=el('select');server.setAttribute('aria-label',tr("سرور منبع","Source server"));server.add(new Option(tr("انتخاب سرور","Select server"),''));server.add(new Option(tr("همین سرور","Local server"),'local'));for(const n of nodes)server.add(new Option(n.name,n.id));const client=el('select');client.setAttribute('aria-label',tr("اشتراک کاربر","User subscription"));client.add(new Option(tr("ابتدا سرور را انتخاب کن","Select a server first"),''));client.disabled=true;row.append(server,client,button(tr("برداشتن","Remove"),async()=>row.remove()));server.onchange=async()=>{const selected=server.value;client.replaceChildren(new Option(tr("در حال دریافت…","Loading…"),''));client.disabled=true;if(!selected)return;try{const data=await api('catalog',{id:selected});if(server.value!==selected)return;client.replaceChildren(new Option(tr("انتخاب اشتراک کاربر","Select a user subscription"),''));for(const c of data.clients)client.add(new Option(c.name,c.id));client.disabled=false;if(!data.clients.length)notice(tr("این سرور اشتراک کاربری ندارد؛ ابتدا در اینباندهای آن کاربر بساز.","This server has no subscriptions. Create a client on its inbounds first."));}catch(e){if(server.value===selected)client.replaceChildren(new Option(tr("دریافت ناموفق؛ سرور را دوباره انتخاب کن","Loading failed; select the server again"),''));notice(e.message);}};$('sources').append(row);}
 $('add-source').onclick=sourceRow;
-$('profile-form').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{const sources=Array.from($('sources').children).map(row=>({node:row.children[0].value,sub:row.children[1].value}));if(!sources.length||sources.some(s=>!s.node||!s.sub))throw Error('سرور و اشتراک همهٔ ردیف‌ها را انتخاب کن.');const d=await api('profile',{name:$('profile-name').value,sources});await load();await copy(d.url);});};
+$('profile-form').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{const sources=Array.from($('sources').children).map(row=>({node:row.children[0].value,sub:row.children[1].value}));if(!sources.length||sources.some(s=>!s.node||!s.sub))throw Error(tr("سرور و اشتراک همهٔ ردیف‌ها را انتخاب کن.","Choose a server and subscription for every row."));const d=await api('profile',{name:$('profile-name').value,sources});await load();await copy(d.url);});};
 load().then(sourceRow).catch(e=>notice(e.message));
 </script></body></html>
 NODE_EMBEDDED_HTML_EOF
@@ -3539,7 +3262,7 @@ def patch_gateway(text):
         ('    async def stop(self, app):\n','    async def stop(self, app):\n        await self.nodes.stop()\n'),
         ('    async def dispatch(self, request):\n','    async def dispatch(self, request):\n        node_response = await self.nodes.route(request)\n        if node_response is not None:\n            return node_response\n'),
         ('        return re.sub(r"</head\\s*>", tag + "</head>", text, count=1, flags=re.I)',
-         '        if not agh:\n            tag += \'<script defer src="\' + html.escape(base, quote=True) + \'_alireza/nodes.js?v=1.0.0"></script>\'\n        return re.sub(r"</head\\s*>", tag + "</head>", text, count=1, flags=re.I)'),
+         '        if not agh:\n            tag += \'<script defer src="\' + html.escape(base, quote=True) + \'_alireza/nodes.js?v=2.8.0"></script>\'\n        return re.sub(r"</head\\s*>", tag + "</head>", text, count=1, flags=re.I)'),
     ]
     for old,new in edits:
         if text.count(old)!=1:
@@ -3817,7 +3540,7 @@ class Insights:
 
     async def route(self,request,relative):
         if relative == '_alireza/insights.js':
-            return web.FileResponse(self.g.root/'insights.js',headers={'Cache-Control':'no-cache'})
+            return web.FileResponse(self.g.root/'insights.js',headers={'Cache-Control':'public,max-age=86400,immutable' if request.query.get('v') == '2.8.0' else 'no-cache'})
         if not relative.startswith('_alireza/insights/'): return None
         await self.g.nodes.admin(request)
         if request.method != 'POST': raise web.HTTPMethodNotAllowed(request.method,['POST'])
@@ -4028,6 +3751,7 @@ class DNSClients:
     def __init__(self, gateway):
         self.g = gateway
         self.db = None
+        self.session = None
         self.admin_lock = asyncio.Lock()
         self.pool = asyncio.Semaphore(8)
         self.rates = {}
@@ -4035,6 +3759,8 @@ class DNSClients:
 
     async def start(self):
         path = self.g.nodes.folder / 'dns-clients.sqlite3'
+        if not path.exists():
+            return  # No retired client subsystem on fresh installs.
         self.db = sqlite3.connect(path, timeout=2)
         path.chmod(0o600)
         self.db.row_factory = sqlite3.Row
@@ -4056,7 +3782,8 @@ class DNSClients:
             timeout=aiohttp.ClientTimeout(total=8, connect=2), connector=aiohttp.TCPConnector(limit=8))
 
     async def stop(self):
-        await self.session.close()
+        if self.session is not None:
+            await self.session.close()
         if self.db:
             self.db.close()
 
@@ -4211,6 +3938,8 @@ class DNSClients:
         if relative == '_alireza/dns-clients.js':
             return web.FileResponse(self.g.root/'dns_clients.js', headers={'Cache-Control': 'no-cache'})
         if not relative.startswith(API): return None
+        if self.db is None:
+            raise web.HTTPGone(text='Panel DNS clients retired; use native AdGuard.')
         if not await self.g.is_admin(request):
             raise web.HTTPForbidden(text='دسترسی مدیر اصلی لازم است.')
         op = relative[len(API):]
@@ -4299,6 +4028,8 @@ class DNSClients:
 
     async def public(self, request):
         if not request.path.startswith(PUBLIC): return None
+        if self.db is None:
+            raise web.HTTPNotFound()
         if request.method not in ('GET','POST'):
             raise web.HTTPMethodNotAllowed(request.method, ['GET','POST'])
         if not request.secure:
@@ -4408,7 +4139,8 @@ cat > "$STAGE/dns_clients.js" <<'NODE_EMBEDDED_DNS_CLIENTS_JS_EOF'
   notice.append(n('p','این محدودیت‌ها روی لینک اختصاصی DoH اعمال می‌شوند. DNS معمولی روی پورت ۵۳ و DoT/DoQ تنظیمات پیشرفته، سهمیهٔ این بخش را ندارند. حجم، مجموع بایت پیام‌های DNS است؛ حجم دانلود سایت‌ها نیست.'));
   notice.append(n('p','لینک اختصاصی یک رمز دسترسی است. IP فقط اتصال شبکه را مشخص می‌کند؛ چند دستگاه پشت مودم یک IP دارند و شبکهٔ موبایل می‌تواند IP را عوض کند. برای محدودیت بیشتر، لینک را محرمانه نگه دار و IP ثابت یا قفل اولین IP را انتخاب کن.'));
   consoleEl.append(title,stats,toolbar,bulk,tableWrap,empty,pager,notice);
-  async function api(op,data){
+  const api=(op,data)=>apiAt(base,op,data);
+  async function apiAt(destination,op,data){
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),90000);
     try{
       const res=await fetch(base+'_alireza/dns-clients/'+op,{method:data?'POST':'GET',credentials:'same-origin',cache:'no-store',signal:controller.signal,
@@ -4689,7 +4421,7 @@ class Features:
 
     async def route(self, request, relative):
         if relative == '_alireza/features.js':
-            return web.FileResponse(self.g.root/'features.js', headers={'Cache-Control':'no-cache'})
+            return web.FileResponse(self.g.root/'features.js', headers={'Cache-Control':'public,max-age=86400,immutable' if request.query.get('v') == '2.8.0' else 'no-cache'})
         if not relative.startswith('_alireza/features/'):
             return None
         await self.g.nodes.admin(request)
@@ -4824,21 +4556,23 @@ cat > "$STAGE/features.js" <<'NODE_EMBEDDED_FEATURES_JS_EOF'
 /* On-demand client controls. No framework, timer or dashboard changes. */
 (() => {
   'use strict';
+  const tx=(fa,en)=>document.documentElement.lang.startsWith('en')?en:fa;
   const cfg=window.ALIREZA;
   if(!cfg || cfg.dns) return;
   if(/\/panel\/clients\/?$/.test(location.pathname)) document.documentElement.setAttribute('data-alireza-clients','');
   if(typeof PERMS==='undefined' || !PERMS.superAdmin) return;
   document.documentElement.setAttribute('data-alireza-admin','');
-  const base=cfg.mount || cfg.base;
+  let base=cfg.mount || cfg.base;
   const pending=new Map();
   const message=(s,error=false)=>{if(typeof Vue!=='undefined') Vue.prototype.$message[error?'error':'success'](s,8);else alert(s);};
-  async function api(op,data){
-    if(op==='policy' && data && !data.read)await api('policy',{email:data.email,read:true});
-    const r=await fetch(base+'_alireza/features/'+op,{method:data?'POST':'GET',credentials:'same-origin',cache:'no-store',
+  const api=(op,data)=>apiAt(base,op,data);
+  async function apiAt(destination,op,data){
+    if(op==='policy' && data && !data.read)await apiAt(destination,'policy',{email:data.email,read:true});
+    const r=await fetch(destination+'_alireza/features/'+op,{method:data?'POST':'GET',credentials:'same-origin',cache:'no-store',
       headers:{'Content-Type':'application/json','X-Alirezapanel-Request':'1'},body:data?JSON.stringify(data):undefined});
     if(!r.ok){let t=await r.text();try{const j=JSON.parse(t);t=j.msg||j.message||t;}catch(_){}throw Error(t.slice(0,400));}
     const result=await r.json();
-    if(op==='policy' && result.policy_version!==2)throw Error('این سرور کنترل‌های جدید را پشتیبانی نمی‌کند؛ install.sh --repair را روی همان نود هم اجرا کن.');
+    if(op==='policy' && result.policy_version!==2)throw Error(tx("این سرور کنترل‌های جدید را پشتیبانی نمی‌کند؛ install.sh --repair را روی همان نود هم اجرا کن.","This node does not support the policy version. Run install.sh --repair on that node."));
     return result;
   }
   // Fill ONLY an empty certificate on a NEW inbound after the operator selects
@@ -4861,34 +4595,36 @@ cat > "$STAGE/features.js" <<'NODE_EMBEDDED_FEATURES_JS_EOF'
   }
   function node(tag,text){const n=document.createElement(tag);if(text)n.textContent=text;return n;}
   async function editor(email,queue){
-    const dialog=node('dialog');dialog.className='alireza-policy-dialog';dialog.dir='rtl';
-    const title=node('h3','فیلتر و حالت گیمینگ کلاینت');const who=node('input');who.value=email||'';who.placeholder='شناسه / ایمیل کلاینت';who.readOnly=!!email;who.setAttribute('aria-label','شناسه کلاینت');
+    const destination=base;
+    const targetApi=(op,data)=>apiAt(destination,op,data);
+    const dialog=node('dialog');dialog.className='alireza-policy-dialog';dialog.dir=document.documentElement.dir||'ltr';
+    const title=node('h3',tx("فیلتر و حالت گیمینگ کلاینت","Client filters and gaming mode"));const who=node('input');who.value=email||'';who.placeholder=tx("شناسه / ایمیل کلاینت","Client identity / email");who.readOnly=!!email;who.setAttribute('aria-label',tx("شناسه کلاینت","Client identity"));
     const status=node('p');status.setAttribute('role','status');
-    const info=node('p','فیلتر دامنه برای همین کاربر روی سرور انتخاب‌شده اعمال می‌شود. نیاز به دیتای geosite دارد؛ پوشش همهٔ محتوا یا ترافیک رمزگذاری‌شده تضمین نمی‌شود. فقط VLESS / VMess / Trojan / Shadowsocks هستهٔ Xray پشتیبانی می‌شوند. پیش‌نیاز Sniffing HTTP/TLS هنگام اعمال به‌صورت خودکار تنظیم می‌شود. تغییر تنظیمات هسته ممکن است اتصال‌ها را کوتاه قطع کند.');
+    const info=node('p',tx("فیلتر دامنه برای همین کاربر روی سرور انتخاب‌شده اعمال می‌شود. نیاز به دیتای geosite دارد؛ پوشش همهٔ محتوا یا ترافیک رمزگذاری‌شده تضمین نمی‌شود. فقط VLESS / VMess / Trojan / Shadowsocks هستهٔ Xray پشتیبانی می‌شوند. پیش‌نیاز Sniffing HTTP/TLS هنگام اعمال به‌صورت خودکار تنظیم می‌شود. تغییر تنظیمات هسته ممکن است اتصال‌ها را کوتاه قطع کند.","Policies apply to this account on the selected server. Geosite data is required; coverage of encrypted content is not guaranteed. Supports Xray VLESS, VMess, Trojan and Shadowsocks. Required HTTP/TLS sniffing is configured on apply. Core updates may briefly interrupt connections."));
     const inputs={};dialog.append(title,who,info);
-    for(const [key,label] of [['adult','مسدودسازی محتوای بزرگسال'],['ads','مسدودسازی تبلیغات'],['social','مسدودسازی شبکه‌های اجتماعی'],['messengers','مسدودسازی پیام‌رسان‌ها / ارتباطات'],['youtube','مسدودسازی یوتیوب'],['torrent','مسدودسازی تورنت قابل تشخیص']]){
+    for(const [key,label] of [['adult',tx("مسدودسازی محتوای بزرگسال","Block adult domains")],['ads',tx("مسدودسازی تبلیغات","Block ads")],['social',tx("مسدودسازی شبکه‌های اجتماعی","Block social media")],['messengers',tx("مسدودسازی پیام‌رسان‌ها / ارتباطات","Block messaging domains")],['youtube',tx("مسدودسازی یوتیوب","Block YouTube")],['torrent',tx("مسدودسازی تورنت قابل تشخیص","Block detectable BitTorrent")]]){
       const row=node('label');const input=node('input');input.type='checkbox';inputs[key]=input;row.append(input,document.createTextNode(label));dialog.append(row);
     }
-    const customLabel=node('label','دامنه‌های مسدود دلخواه؛ هر خط یک دامنه (همراه زیردامنه‌ها)');
+    const customLabel=node('label',tx("دامنه‌های مسدود دلخواه؛ هر خط یک دامنه (همراه زیردامنه‌ها)","Custom blocked domains; one per line (including subdomains)"));
     const custom=node('textarea');custom.rows=3;custom.dir='ltr';custom.placeholder='example.com';custom.setAttribute('aria-label','دامنه‌های مسدود دلخواه');customLabel.append(custom);dialog.append(customLabel);
     const gameBox=node('section');gameBox.className='alireza-game-box';
-    const game=node('button','Gaming Mode · خاموش');game.type='button';game.setAttribute('aria-pressed','false');
+    const game=node('button',tx("Gaming Mode · خاموش","Gaming Mode · Off"));game.type='button';game.setAttribute('aria-pressed','false');
     let gaming=false;
-    const setGaming=value=>{gaming=!!value;game.setAttribute('aria-pressed',String(gaming));game.textContent='Gaming Mode · '+(gaming?'روشن':'خاموش');};
+    const setGaming=value=>{gaming=!!value;game.setAttribute('aria-pressed',String(gaming));game.textContent='Gaming Mode · '+(gaming?tx('روشن','On'):tx('خاموش','Off'));};
     game.onclick=()=>setGaming(!gaming);
-    gameBox.append(game,node('p','خروج مستقیم UDP فقط برای این کاربر، پس از قوانین موجود. می‌تواند مسیر اضافهٔ خروجی سرور را حذف کند؛ روی مسیر از قبل مستقیم لزوماً اثری ندارد. پینگ تضمینی نیست. IP خروج UDP می‌تواند عوض شود. UDP پورت ۵۳، تونل و قوانین صریح دست‌نخورده می‌مانند؛ پشتیبانی UDP در برنامهٔ کاربر لازم است. بدون سرویس اضافه یا افزایش بافر.'));
+    gameBox.append(game,node('p',tx("خروج مستقیم UDP فقط برای این کاربر، پس از قوانین موجود. می‌تواند مسیر اضافهٔ خروجی سرور را حذف کند؛ روی مسیر از قبل مستقیم لزوماً اثری ندارد. پینگ تضمینی نیست. IP خروج UDP می‌تواند عوض شود. UDP پورت ۵۳، تونل و قوانین صریح دست‌نخورده می‌مانند؛ پشتیبانی UDP در برنامهٔ کاربر لازم است. بدون سرویس اضافه یا افزایش بافر.","Direct UDP for this account follows existing rules. It may shorten an indirect outbound route; ping improvements are not guaranteed. UDP egress IP may change. DNS UDP port 53 and explicit rules remain unchanged. Requires UDP support in the client. No additional service or buffers.")));
     dialog.append(gameBox);
-    const save=node('button',queue?'ذخیره همراه کلاینت':'اعمال فیلتر');save.type='button';
-    const cancel=node('button','بستن');cancel.type='button';cancel.onclick=()=>dialog.close();
-    const read=async()=>{save.disabled=true;status.textContent='در حال خواندن تنظیمات…';try{
-      const p=pending.get(who.value.trim()) || await api('policy',{email:who.value.trim(),read:true});
+    const save=node('button',queue?tx("ذخیره همراه کلاینت","Save with client"):tx("اعمال فیلتر","Apply policy"));save.type='button';
+    const cancel=node('button',tx("بستن","Close"));cancel.type='button';cancel.onclick=()=>dialog.close();
+    const read=async()=>{save.disabled=true;status.textContent=tx("در حال خواندن تنظیمات…","Reading settings…");try{
+      const p=pending.get(who.value.trim()) || await targetApi('policy',{email:who.value.trim(),read:true});
       Object.keys(inputs).forEach(k=>{inputs[k].checked=!!p[k];});custom.value=(p.domains||[]).join('\n');setGaming(p.gaming);status.textContent='';
     }catch(e){status.textContent=e.message;}finally{save.disabled=false;}};
     who.onchange=read;
-    save.onclick=async()=>{const name=who.value.trim();if(!name){status.textContent='شناسه کلاینت را وارد کن.';return;}
+    save.onclick=async()=>{const name=who.value.trim();if(!name){status.textContent=tx("شناسه کلاینت را وارد کن.","Enter the client identity.");return;}
       const choice={email:name,...Object.fromEntries(Object.entries(inputs).map(([k,v])=>[k,v.checked])),domains:custom.value.split('\n').map(v=>v.trim()).filter(Boolean),gaming};save.disabled=true;
-      try{if(queue){pending.set(name,choice);message('انتخاب شد؛ برای اعمال فیلتر دکمهٔ ذخیرهٔ کلاینت را بزن.');}
-        else{status.textContent='در حال اعتبارسنجی و اعمال؛ ممکن است دانلود دیتای فیلتر زمان ببرد…';const result=await api('policy',choice);pending.delete(name);message('تنظیمات روی سرور اعمال شد.'+(result.warnings?.length?' '+result.warnings.join(' '):''));}
+      try{if(queue){pending.set(name,choice);message(tx("انتخاب شد؛ برای اعمال فیلتر دکمهٔ ذخیرهٔ کلاینت را بزن.","Queued. Save the client to apply its policy."));}
+        else{status.textContent=tx("در حال اعتبارسنجی و اعمال؛ ممکن است دانلود دیتای فیلتر زمان ببرد…","Validating and applying. Filter data downloads may take time…");const result=await targetApi('policy',choice);pending.delete(name);message(tx("تنظیمات روی سرور اعمال شد.","Settings applied on the target server.")+(result.warnings?.length?' '+result.warnings.join(' '):''));}
         dialog.close();
       }catch(e){status.textContent=e.message;}finally{save.disabled=false;}};
     dialog.append(status,save,cancel);dialog.addEventListener('close',()=>dialog.remove());document.body.append(dialog);dialog.showModal();if(email)await read();
@@ -4906,19 +4642,63 @@ cat > "$STAGE/features.js" <<'NODE_EMBEDDED_FEATURES_JS_EOF'
     if(form && form.email) emails.add(form.email);
     try{const s=typeof form.settings==='string'?JSON.parse(form.settings):form.settings;for(const c of s?.clients||[])if(c.email)emails.add(c.email);}catch(_){}
     for(const email of emails){const choice=pending.get(email);if(!choice)continue;
-      try{const result=await api('policy',choice);pending.delete(email);message('کلاینت و تنظیمات آن ذخیره شدند.'+(result.warnings?.length?' '+result.warnings.join(' '):''));}
-      catch(e){message('کلاینت ذخیره شد، ولی فیلتر فعال نشد: '+e.message+' — از دکمهٔ فیلتر کلاینت دوباره اقدام کن.',true);}
+      try{const result=await api('policy',choice);pending.delete(email);message(tx("کلاینت و تنظیمات آن ذخیره شدند.","Client and policy saved.")+(result.warnings?.length?' '+result.warnings.join(' '):''));}
+      catch(e){message(tx("کلاینت ذخیره شد، ولی فیلتر فعال نشد: ","Client saved, but filtering failed: ")+e.message+tx(" — از دکمهٔ فیلتر کلاینت دوباره اقدام کن."," — retry from the client filter control."),true);}
     }
     return response;
   });
-  if(!/\/panel\/(clients|inbounds|core)\/?$/.test(location.pathname))return;
+  const nav=document.querySelector('.bo-rail');const component=nav&&nav.__vue__;
+  const english=document.documentElement.lang.startsWith('en');
+  const tr=(fa,en)=>english?en:fa;
+  if(component&&Array.isArray(component.tabs)){
+    const key=cfg.base+'panel/content';
+    if(!component.tabs.some(t=>t.key===key))component.tabs.splice(component.tabs.length-1,0,{key,icon:'safety',title:tr('فیلتر محتوا','Content filters')});
+    if(location.pathname.replace(/\/$/,'')===key)component.requestUri=key;
+  }
   const main=document.querySelector('.bo-content');if(!main)return;
-  const bar=node('div');bar.className='alireza-client-tools';
-  const policy=node('button','فیلتر / گیمینگ');policy.type='button';policy.onclick=()=>editor('',false);
-  const tls=node('button','گواهی و اتصال');tls.type='button';tls.onclick=async()=>{tls.disabled=true;try{
-    const d=await api('tls');alert('alirezapanel\n'+d.host+'\n'+(d.enabled?'HTTPS':'HTTP')+' · '+d.mode+'\nانقضا: '+d.expires+'\nدر فرم TLS اینباند، گواهی alirezapanel را انتخاب کن. دامنه/SNI باید با گواهی مطابقت داشته باشد.\nمدیریت از ترمینال: sudo alirezapanel ssl');
-  }catch(e){message(e.message,true);}finally{tls.disabled=false;}};
-  const dns=node('a','مدیریت DNS');dns.href=cfg.base+'panel/dns';bar.append(policy,tls,dns);main.prepend(bar);
+  if(/\/panel\/admins\/?$/.test(location.pathname)){
+    const hint=node('section');hint.className='ap-admin-guide';
+    hint.append(node('h2',tr('دسترسی روشن، ورود آسان','Clear access, simple sign-in')),
+      node('p',tr('برای هر ادمین مجوز یک صفحه و اینباندهای مجاز را انتخاب کنید. رمز و نشست توسط هستهٔ اصلی بررسی می‌شود. حساب بدون مجوز صفحه فقط صفحهٔ راهنما و خروج دارد.','Choose a page permission and allowed inbounds for each admin. Accounts without page permissions see an access notice and can sign out.')));
+    const login=node('a',tr('باز کردن صفحهٔ ورود','Open sign-in page'));login.href=cfg.base;login.target='_blank';login.rel='noopener noreferrer';login.className='ap-action';hint.append(login);main.prepend(hint);
+  }
+  const workspace=document.getElementById('alireza-content');if(!workspace)return;
+  workspace.className='ap-workspace';
+  const hero=node('header');hero.className='ap-hero';
+  hero.append(node('span','CONTENT CONTROL'),node('h1',tr('کنترل محتوا، برای هر کاربر','Content control, per account')),
+    node('p',tr('فیلترهای واقعی Xray، دسته‌بندی دامنه‌ها و حالت گیمینگ؛ مستقل از رابط AdGuard.','Native Xray policies, domain categories and gaming settings. Independent of the AdGuard interface.')));
+  const controls=node('section');controls.className='ap-filter-controls';
+  const label=node('label',tr('سرور مقصد','Target server'));const select=node('select');label.append(select);
+  select.add(new Option(tr(tx("همین سرور","Local server"),'Local server'),'local'));
+  const search=node('input');search.type='search';search.placeholder=tr('جست‌وجوی شناسهٔ کاربر…','Search account identity…');search.setAttribute('aria-label',search.placeholder);
+  const refresh=node('button',tr('تازه‌سازی','Refresh'));refresh.type='button';
+  const custom=node('button',tr('شناسهٔ دلخواه','Enter identity'));custom.type='button';custom.onclick=()=>editor('',false);
+  controls.append(label,search,refresh,custom);const status=node('p');status.setAttribute('role','status');
+  const grid=node('div');grid.className='ap-policy-grid';workspace.append(hero,controls,status,grid);
+  let clients=[];let generation=0;
+  function render(){grid.replaceChildren();const q=search.value.trim().toLowerCase();
+    const rows=clients.filter(c=>c.email.toLowerCase().includes(q));
+    for(const c of rows.slice(0,100)){
+      const card=node('article');card.className='ap-policy-card';const name=node('h3',c.email);name.dir='auto';
+      const badge=node('span',c.protocols.join(' · '));badge.className='ap-eyebrow';
+      const button=node('button',tr('تنظیم فیلتر / گیمینگ','Edit filters / gaming'));button.type='button';button.onclick=()=>editor(c.email,false);
+      card.append(badge,name,button);grid.append(card);
+    }
+    status.textContent=rows.length?tr('تعداد کاربران: ','Accounts: ')+rows.length+(rows.length>100?tr('؛ برای دیدن موارد بیشتر جست‌وجو کنید.','; search to narrow the first 100 results.'):''):tr('کاربری یافت نشد. ابتدا کلاینت را روی اینباند ذخیره کنید.','No accounts found. Save a client on an inbound first.');
+  }
+  async function load(){const current=++generation;base=select.value==='local'?cfg.base:cfg.base+'_alireza/remote/'+encodeURIComponent(select.value)+'/';
+    clients=[];grid.replaceChildren();refresh.disabled=true;custom.disabled=true;status.textContent=tr(tx("در حال دریافت…","Loading…"),'Loading…');
+    try{const r=await fetch(base+'panel/api/inbounds/list',{credentials:'same-origin',cache:'no-store',headers:{'Accept':'application/json','X-Requested-With':'XMLHttpRequest'}});
+      const d=await r.json();if(!r.ok||d.success!==true)throw Error(d.msg||'Server unavailable');if(current!==generation)return;
+      const unique=new Map();for(const inbound of d.obj||[]){let settings;try{settings=typeof inbound.settings==='string'?JSON.parse(inbound.settings):inbound.settings;}catch(_){continue;}
+        for(const c of settings?.clients||[]){if(!c.email)continue;const item=unique.get(c.email)||{email:c.email,protocols:[]};if(!item.protocols.includes(inbound.protocol))item.protocols.push(inbound.protocol);unique.set(c.email,item);}}
+      clients=[...unique.values()];render();
+    }catch(e){if(current===generation)status.textContent=e.message;}finally{if(current===generation){refresh.disabled=false;custom.disabled=false;}}
+  }
+  select.onchange=load;refresh.onclick=load;search.oninput=render;
+  fetch(cfg.base+'_alireza/nodes/list',{credentials:'same-origin',cache:'no-store'}).then(async r=>{if(!r.ok)throw Error('Nodes unavailable');return r.json();}).then(d=>{for(const n of d.nodes)select.add(new Option(n.name,n.id));}).catch(e=>{status.textContent=e.message;});
+  load();
+
 })();
 NODE_EMBEDDED_FEATURES_JS_EOF
 
@@ -5232,8 +5012,8 @@ python3 -m py_compile "$STAGE/gateway.py" "$STAGE/manage.py" "$STAGE/nodes.py" "
 python3 -c 'import aiohttp, yaml, bcrypt; print("Runtime dependencies OK")'
 if [[ -f "$ETC/owner" ]]; then
     say 'Backing up the existing installation before repair (services pause briefly).'
-    systemctl stop alirezapanel alirezapanel-vpn alirezapanel-dns || true
     REPAIR_STOPPED=1
+    systemctl stop alirezapanel alirezapanel-vpn alirezapanel-dns
     backup="/var/backups/alirezapanel/$(date -u +%Y%m%dT%H%M%SZ)-$$"
     install -d -m 700 "$backup"
     cp -a "$ETC" "$backup/config"
@@ -5241,6 +5021,12 @@ if [[ -f "$ETC/owner" ]]; then
     cp -a "$ROOT/adguard" "$backup/adguard"
     [[ ! -d /var/lib/alirezapanel-nodes ]] || cp -a /var/lib/alirezapanel-nodes "$backup/nodes"
     [[ ! -d "$ROOT/gateway" ]] || cp -a "$ROOT/gateway" "$backup/gateway"
+    install -d -m 700 "$backup/units"
+    for saved_unit in /etc/systemd/system/alirezapanel*.service /etc/systemd/system/alirezapanel*.timer /etc/systemd/system/alirezapanel*.service.d; do
+        [[ ! -e "$saved_unit" ]] || cp -a "$saved_unit" "$backup/units/"
+    done
+    [[ ! -f /usr/local/bin/alirezapanel ]] || cp -a /usr/local/bin/alirezapanel "$backup/cli"
+    [[ ! -f "$ROOT/README.txt" ]] || cp -a "$ROOT/README.txt" "$backup/README.txt"
     say "Backup saved at $backup"
 fi
 CHANGED=1
@@ -5272,23 +5058,9 @@ SOURCES
 
 say 'Preparing shared access and DNS defaults.'
 python3 "$ROOT/gateway/manage.py" init
-python3 - "$ROOT/adguard/AdGuardHome.yaml" <<'MANAGED_DOH'
-import ipaddress, pathlib, sys, yaml
-p=pathlib.Path(sys.argv[1]); cfg=yaml.safe_load(p.read_text())
-http=cfg.setdefault('http', {})
-host=http.get('address','127.0.0.1:18081').rsplit(':',1)[0].strip('[]')
-if not ipaddress.ip_address(host).is_loopback:
-    raise SystemExit('Managed DNS requires a loopback-only AdGuard HTTP listener. Restore 127.0.0.1:18081 before repair.')
-doh=http.setdefault('doh', {}); doh['insecure_enabled']=True
-# Gateway has its own per-client limiter; don't aggregate every local relay under one IP.
-white=cfg.setdefault('dns', {}).setdefault('ratelimit_whitelist', [])
-for addr in ('127.0.0.1','::1'):
-    if addr not in white: white.append(addr)
-if doh.get('routes'):
-    for route in ('GET /dns-query','POST /dns-query','GET /dns-query/{ClientID}','POST /dns-query/{ClientID}'):
-        if route not in doh['routes']: doh['routes'].append(route)
-tmp=p.with_suffix('.yaml.new'); tmp.write_text(yaml.safe_dump(cfg,sort_keys=False)); tmp.chmod(0o600); tmp.replace(p)
-MANAGED_DOH
+# AdGuard settings belong to AdGuard. Repair preserves its YAML byte-for-byte.
+# Legacy managed DoH already has its configured listener; no new DNS client
+# relay, ratelimit exception or route is provisioned on fresh installs.
 if [[ -f "$STAGE/tls-result.json" ]]; then
     install -o root -g root -m 600 "$STAGE/tls-result.json" "$ETC/acme.json"
 fi
@@ -5434,7 +5206,7 @@ set -euo pipefail
 if [[ $# -eq 0 ]]; then
     while true; do
         clear 2>/dev/null || true
-        printf '%s\n' '╭──────────────────────────────────────╮' '│          alirezapanel 2.3            │' '├──────────────────────────────────────┤' '│ 1) URL + credentials                 │' '│ 2) Reset admin password              │' '│ 3) Health check                      │' '│ 4) Service status                    │' '│ 5) Safe restart                      │' '│ 6) Recent logs                       │' '│ 7) Backup now                        │' '│ 8) SSL manager                       │' '│ 9) Resource snapshot                 │' '│10) Paths + ports                     │' '│ 0) Exit                              │' '╰──────────────────────────────────────╯'
+        printf '%s\n' '╭──────────────────────────────────────╮' '│          alirezapanel 2.8            │' '├──────────────────────────────────────┤' '│ 1) URL + credentials                 │' '│ 2) Reset admin password              │' '│ 3) Health check                      │' '│ 4) Service status                    │' '│ 5) Safe restart                      │' '│ 6) Recent logs                       │' '│ 7) Backup now                        │' '│ 8) SSL manager                       │' '│ 9) Resource snapshot                 │' '│10) Paths + ports                     │' '│ 0) Exit                              │' '╰──────────────────────────────────────╯'
         read -r -p 'Select: ' choice
         case "$choice" in
           1) python3 /opt/alirezapanel/gateway/manage.py info; /usr/local/bin/alirezapanel credentials ;;
@@ -5526,6 +5298,12 @@ PYINFO
         cp -a /opt/alirezapanel/vpn "$dest/vpn"
         cp -a /opt/alirezapanel/adguard "$dest/adguard"
         cp -a /opt/alirezapanel/gateway "$dest/gateway"
+        install -d -m 700 "$dest/units"
+        for saved_unit in /etc/systemd/system/alirezapanel*.service /etc/systemd/system/alirezapanel*.timer /etc/systemd/system/alirezapanel*.service.d; do
+            [[ ! -e "$saved_unit" ]] || cp -a "$saved_unit" "$dest/units/"
+        done
+        cp -a /usr/local/bin/alirezapanel "$dest/cli"
+        cp -a /opt/alirezapanel/README.txt "$dest/README.txt"
         printf 'Backup saved: %s\n' "$dest"
         ;;
     vpn) shift; cd /opt/alirezapanel/vpn; exec ./vpn-ui-amd64 "$@" ;;

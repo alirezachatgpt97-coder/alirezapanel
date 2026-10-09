@@ -1,0 +1,8 @@
+{
+  "backend_sha256": "18ec321d9074b319bd5756508bbc523ab5d95450b832c406acdd72e987a2da8f",
+  "node_base": "/edge/",
+  "node": "TLS enrollment, status/catalog, mounted page, defaults, create/edit/delete inbound, add client, assignable, multipart/query fidelity, destination isolation, allowlist and token revocation passed",
+  "admin": "native create, password rejection, permitted landing, denied integration, explicit inbound-grant isolation, account revocation, empty grants notice/logout passed",
+  "system_install": "not executed; no systemd/kernel/full AdGuard test",
+  "browser": false
+}
